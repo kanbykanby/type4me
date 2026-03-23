@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Type4Me",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
             name: "Type4Me",

@@ -56,6 +56,10 @@ final class AudioCaptureEngine: NSObject, @unchecked Sendable, AVCaptureAudioDat
     /// Pre-initialize the audio capture pipeline so the first real recording starts instantly.
     func warmUp() {
         guard !isWarmedUp else { return }
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+            NSLog("[Audio] Warm-up skipped: microphone permission not granted")
+            return
+        }
         outputQueue.async { [weak self] in
             guard let self else { return }
             do {
