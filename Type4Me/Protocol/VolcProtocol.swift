@@ -84,7 +84,7 @@ enum VolcProtocol: Sendable {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         if !cleanedHotwords.isEmpty {
-            contextObject["hotwords"] = cleanedHotwords.map { ["word": $0, "scale": 3.0] as [String: Any] }
+            contextObject["hotwords"] = cleanedHotwords.map { ["word": $0, "scale": 5.0] as [String: Any] }
         }
 
         guard !contextObject.isEmpty,
