@@ -330,11 +330,50 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
         ASRProviderRegistry.entry(for: selectedASRProvider)?.isAvailable ?? false
     }
 
+    private var currentASRGuideLinks: [(prefix: String?, label: String, url: URL)] {
+        switch selectedASRProvider {
+        case .volcano:
+            return [(L("查看", "View"), L("配置指南", "setup guide"), URL(string: "https://my.feishu.cn/wiki/QdEnwBMfUi0mN4k3ucMcNYhUnXr")!)]
+        case .deepgram:
+            return [
+                (L("可用模型", "Models"), L("查看", "view"), URL(string: "https://developers.deepgram.com/docs/models-languages-overview/")!),
+                (L("API Key", "API Key"), L("获取", "get"), URL(string: "https://developers.deepgram.com/docs/create-additional-api-keys")!),
+            ]
+        case .assemblyai:
+            return [
+                (L("可用模型", "Models"), L("查看", "view"), URL(string: "https://www.assemblyai.com/docs/getting-started/models")!),
+                (L("API Key", "API Key"), L("获取", "get"), URL(string: "https://www.assemblyai.com/docs/faq/how-to-get-your-api-key")!),
+            ]
+        case .bailian:
+            return [
+                (L("可用模型", "Models"), L("查看", "view"), URL(string: "https://help.aliyun.com/zh/model-studio/fun-asr-realtime-websocket-api")!),
+                (L("API Key", "API Key"), L("获取", "get"), URL(string: "https://help.aliyun.com/zh/model-studio/get-api-key")!),
+            ]
+        default:
+            return []
+        }
+    }
+
     // MARK: Body
 
     var body: some View {
         settingsGroupCard(L("语音识别引擎", "ASR Provider"), icon: "mic.fill") {
             asrProviderPicker
+            if !currentASRGuideLinks.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(Array(currentASRGuideLinks.enumerated()), id: \.offset) { index, link in
+                        if index > 0 {
+                            Text("·").font(.system(size: 10)).foregroundStyle(TF.settingsTextTertiary)
+                        }
+                        if let prefix = link.prefix {
+                            Text(prefix).font(.system(size: 10)).foregroundStyle(TF.settingsTextTertiary)
+                        }
+                        Link(link.label, destination: link.url)
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                }
+                .padding(.bottom, 4)
+            }
             SettingsDivider()
 
             if selectedASRProvider.isLocal {
