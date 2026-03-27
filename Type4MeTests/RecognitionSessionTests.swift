@@ -50,4 +50,14 @@ final class RecognitionSessionTests: XCTestCase {
         let mode = await session.currentModeForTesting()
         XCTAssertEqual(mode.id, ProcessingMode.performanceId)
     }
+
+    func testSwitchModeFallsBackToDirectForAssemblyAI() async {
+        KeychainService.selectedASRProvider = .assemblyai
+        let session = RecognitionSession()
+
+        await session.switchMode(to: .performance)
+
+        let mode = await session.currentModeForTesting()
+        XCTAssertEqual(mode.id, ProcessingMode.directId)
+    }
 }

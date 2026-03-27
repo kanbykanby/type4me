@@ -9,8 +9,8 @@ final class ASRProviderRegistryTests: XCTestCase {
         XCTAssertNil(ASRProviderRegistry.unsupportedReason(for: .performance, provider: .volcano))
     }
 
-    func testBailianAndDeepgramOnlySupportQuickMode() {
-        for provider in [ASRProvider.bailian, .deepgram] {
+    func testQuickOnlyProvidersOnlySupportQuickMode() {
+        for provider in [ASRProvider.bailian, .deepgram, .assemblyai] {
             XCTAssertTrue(ASRProviderRegistry.supports(.direct, for: provider))
             XCTAssertFalse(ASRProviderRegistry.supports(.performance, for: provider))
             XCTAssertEqual(
@@ -32,6 +32,10 @@ final class ASRProviderRegistryTests: XCTestCase {
             ASRProviderRegistry.resolvedMode(for: .performance, provider: .deepgram).id,
             ProcessingMode.directId
         )
+        XCTAssertEqual(
+            ASRProviderRegistry.resolvedMode(for: .performance, provider: .assemblyai).id,
+            ProcessingMode.directId
+        )
     }
 
     func testSupportedModesFilterOnlyRemovesPerformanceModeForQuickOnlyProviders() {
@@ -45,6 +49,9 @@ final class ASRProviderRegistryTests: XCTestCase {
 
         let bailianModes = ASRProviderRegistry.supportedModes(from: modes, for: .bailian)
         XCTAssertEqual(bailianModes.map(\.id), [ProcessingMode.directId, customMode.id])
+
+        let assemblyModes = ASRProviderRegistry.supportedModes(from: modes, for: .assemblyai)
+        XCTAssertEqual(assemblyModes.map(\.id), [ProcessingMode.directId, customMode.id])
 
         let volcanoModes = ASRProviderRegistry.supportedModes(from: modes, for: .volcano)
         XCTAssertEqual(volcanoModes.map(\.id), [ProcessingMode.directId, ProcessingMode.performanceId, customMode.id])

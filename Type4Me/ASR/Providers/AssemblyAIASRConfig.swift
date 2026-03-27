@@ -1,0 +1,67 @@
+import Foundation
+
+struct AssemblyAIASRConfig: ASRProviderConfig, Sendable {
+
+    static let provider = ASRProvider.assemblyai
+    static let displayName = "AssemblyAI"
+    static let defaultModel = "universal-streaming-multilingual"
+    static let supportedModels = [
+        "universal-streaming-multilingual",
+        "universal-streaming-english",
+        "u3-rt-pro",
+    ]
+
+    static var credentialFields: [CredentialField] {[
+        CredentialField(
+            key: "apiKey",
+            label: "API Key",
+            placeholder: "aa_...",
+            isSecure: true,
+            isOptional: false,
+            defaultValue: ""
+        ),
+        CredentialField(
+            key: "model",
+            label: L("Streaming Model (不支持中文)", "Streaming Model (No Chinese support)"),
+            placeholder: defaultModel,
+            isSecure: false,
+            isOptional: false,
+            defaultValue: defaultModel
+        ),
+    ]}
+
+    let apiKey: String
+    let model: String
+
+    init?(credentials: [String: String]) {
+        guard let apiKey = Self.sanitized(credentials["apiKey"]),
+              !apiKey.isEmpty
+        else {
+            return nil
+        }
+
+        let rawModel = Self.sanitized(credentials["model"])?.lowercased() ?? ""
+        self.apiKey = apiKey
+        self.model = Self.supportedModels.contains(rawModel) ? rawModel : Self.defaultModel
+    }
+
+    func toCredentials() -> [String: String] {
+        [
+            "apiKey": apiKey,
+            "model": model,
+        ]
+    }
+
+    var isValid: Bool {
+        !apiKey.isEmpty && Self.supportedModels.contains(model)
+    }
+
+    private static func sanitized(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else {
+            return nil
+        }
+        return trimmed
+    }
+}

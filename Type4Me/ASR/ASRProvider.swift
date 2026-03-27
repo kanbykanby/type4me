@@ -11,6 +11,7 @@ enum ASRProvider: String, CaseIterable, Codable, Sendable {
     case google
     case aws
     case deepgram
+    case assemblyai
     // China
     case volcano
     case aliyun
@@ -28,6 +29,7 @@ enum ASRProvider: String, CaseIterable, Codable, Sendable {
         case .google:   return "Google Cloud STT"
         case .aws:      return "AWS Transcribe"
         case .deepgram: return "Deepgram"
+        case .assemblyai: return "AssemblyAI"
         case .volcano:  return L("火山引擎 (Doubao)", "Volcano (Doubao)")
         case .aliyun:   return L("阿里云", "Alibaba Cloud")
         case .bailian:  return L("阿里云百炼", "Alibaba Cloud Bailian")

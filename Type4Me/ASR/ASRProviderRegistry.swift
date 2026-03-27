@@ -74,6 +74,11 @@ enum ASRProviderRegistry {
                 createClient: { DeepgramASRClient() },
                 capabilities: .quickOnly
             ),
+            .assemblyai: ProviderEntry(
+                configType: AssemblyAIASRConfig.self,
+                createClient: { AssemblyAIASRClient() },
+                capabilities: .quickOnly
+            ),
             .bailian: ProviderEntry(
                 configType: BailianASRConfig.self,
                 createClient: { BailianASRClient() },
