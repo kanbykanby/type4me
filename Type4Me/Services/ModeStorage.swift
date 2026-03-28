@@ -44,6 +44,20 @@ struct ModeStorage {
             if mode.id == ProcessingMode.translateId {
                 return migrateDefaultMode(mode, fallback: .translate)
             }
+            if mode.id == ProcessingMode.formalWriting.id {
+                return migrateSeededDefaultPrompt(
+                    mode,
+                    legacyPrompts: [ProcessingMode.legacyFormalWritingPromptTemplate],
+                    fallbackPrompt: ProcessingMode.formalWriting.prompt
+                )
+            }
+            if mode.id == ProcessingMode.translate.id {
+                return migrateSeededDefaultPrompt(
+                    mode,
+                    legacyPrompts: [ProcessingMode.legacyTranslatePromptTemplate],
+                    fallbackPrompt: ProcessingMode.translate.prompt
+                )
+            }
             // Drop legacy dual-channel mode (replaced by global "enhanced ASR" toggle)
             if mode.id == UUID(uuidString: "00000000-0000-0000-0000-000000000007")! {
                 return nil
@@ -81,6 +95,19 @@ struct ModeStorage {
         migrated.hotkeyCode = mode.hotkeyCode
         migrated.hotkeyModifiers = mode.hotkeyModifiers
         migrated.hotkeyStyle = mode.hotkeyStyle
+        migrated.isBuiltin = false
+        return migrated
+    }
+
+    private func migrateSeededDefaultPrompt(
+        _ mode: ProcessingMode,
+        legacyPrompts: Set<String>,
+        fallbackPrompt: String
+    ) -> ProcessingMode {
+        guard legacyPrompts.contains(mode.prompt) else { return mode }
+
+        var migrated = mode
+        migrated.prompt = fallbackPrompt
         migrated.isBuiltin = false
         return migrated
     }

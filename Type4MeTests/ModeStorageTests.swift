@@ -89,6 +89,54 @@ final class ModeStorageTests: XCTestCase {
         XCTAssertEqual(loaded.first(where: { $0.id == ProcessingMode.smartDirect.id })?.processingLabel, customSmart.processingLabel)
     }
 
+    func testLoadMigratesLegacySeededDefaultPromptsWhenUnchanged() throws {
+        let storage = ModeStorage(fileURL: testURL)
+        var legacyFormalWriting = ProcessingMode.formalWriting
+        legacyFormalWriting.prompt = ProcessingMode.legacyFormalWritingPromptTemplate
+        legacyFormalWriting.processingLabel = "我的润色中"
+        legacyFormalWriting.hotkeyCode = 30
+
+        var legacyTranslate = ProcessingMode.translate
+        legacyTranslate.prompt = ProcessingMode.legacyTranslatePromptTemplate
+        legacyTranslate.processingLabel = "我的翻译中"
+        legacyTranslate.hotkeyCode = 31
+
+        try storage.save([ProcessingMode.direct, legacyFormalWriting, legacyTranslate])
+        let loaded = storage.load()
+
+        let formalWriting = loaded.first(where: { $0.id == ProcessingMode.formalWriting.id })
+        let translate = loaded.first(where: { $0.id == ProcessingMode.translate.id })
+
+        XCTAssertEqual(formalWriting?.prompt, ProcessingMode.formalWriting.prompt)
+        XCTAssertEqual(formalWriting?.processingLabel, "我的润色中")
+        XCTAssertEqual(formalWriting?.hotkeyCode, 30)
+
+        XCTAssertEqual(translate?.prompt, ProcessingMode.translate.prompt)
+        XCTAssertEqual(translate?.processingLabel, "我的翻译中")
+        XCTAssertEqual(translate?.hotkeyCode, 31)
+    }
+
+    func testCustomizedSeededDefaultPromptsArePreserved() throws {
+        let storage = ModeStorage(fileURL: testURL)
+        var customFormalWriting = ProcessingMode.formalWriting
+        customFormalWriting.prompt = "请把文本整理成更正式的版本：\n{text}"
+
+        var customTranslate = ProcessingMode.translate
+        customTranslate.prompt = "Translate this into concise English:\n{text}"
+
+        try storage.save([ProcessingMode.direct, customFormalWriting, customTranslate])
+        let loaded = storage.load()
+
+        XCTAssertEqual(
+            loaded.first(where: { $0.id == ProcessingMode.formalWriting.id })?.prompt,
+            customFormalWriting.prompt
+        )
+        XCTAssertEqual(
+            loaded.first(where: { $0.id == ProcessingMode.translate.id })?.prompt,
+            customTranslate.prompt
+        )
+    }
+
     // MARK: - Hotkey field tests
 
     func testHotkeyFieldsArePersisted() throws {
