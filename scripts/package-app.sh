@@ -87,6 +87,33 @@ EOF
 mkdir -p "$APP_PATH/Contents/Resources/Sounds"
 cp "$PROJECT_DIR/Type4Me/Resources/Sounds/"*.wav "$APP_PATH/Contents/Resources/Sounds/" 2>/dev/null || true
 
+# Copy SenseVoice model if available (for full DMG builds)
+SENSEVOICE_MODEL_CACHE="$HOME/.cache/modelscope/hub/models/iic/SenseVoiceSmall"
+if [ "${BUNDLE_SENSEVOICE_MODEL:-0}" = "1" ] && [ -d "$SENSEVOICE_MODEL_CACHE" ]; then
+    echo "Bundling SenseVoice model..."
+    mkdir -p "$APP_PATH/Contents/Resources/Models"
+    cp -R "$SENSEVOICE_MODEL_CACHE" "$APP_PATH/Contents/Resources/Models/SenseVoiceSmall"
+    echo "SenseVoice model bundled."
+fi
+
+# Copy sensevoice-server if built
+SENSEVOICE_DIST="$PROJECT_DIR/sensevoice-server/dist/sensevoice-server"
+if [ -d "$SENSEVOICE_DIST" ]; then
+    echo "Bundling sensevoice-server..."
+    cp -R "$SENSEVOICE_DIST" "$APP_PATH/Contents/MacOS/sensevoice-server-dist"
+    # Create a wrapper script at the expected path
+    cat > "$APP_PATH/Contents/MacOS/sensevoice-server" << 'WRAPPER'
+#!/bin/bash
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$DIR/sensevoice-server-dist/sensevoice-server" "$@"
+WRAPPER
+    chmod +x "$APP_PATH/Contents/MacOS/sensevoice-server"
+    echo "sensevoice-server bundled."
+fi
+
+# Copy third-party licenses
+cp "$PROJECT_DIR/Type4Me/Resources/THIRD_PARTY_LICENSES.txt" "$APP_PATH/Contents/Resources/" 2>/dev/null || true
+
 echo "Signing with '${SIGNING_IDENTITY}'..."
 codesign -f -s "$SIGNING_IDENTITY" "$APP_PATH" 2>/dev/null && echo "Signed." || echo "Signing skipped (no identity available)."
 
