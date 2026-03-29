@@ -1107,7 +1107,7 @@ class StreamingSenseVoice:
             # ONNX path: int8 quantized, ~13x faster
             x_length = np.array([x.shape[1]], dtype=np.int32)
             language = np.array([0], dtype=np.int32)   # auto
-            text_norm = np.array([15], dtype=np.int32)  # withitn
+            text_norm = np.array([14], dtype=np.int32)  # withitn (14=with, 15=without)
             result = self._onnx_session.run(
                 None,
                 {"x": x, "x_length": x_length, "language": language, "text_norm": text_norm},
