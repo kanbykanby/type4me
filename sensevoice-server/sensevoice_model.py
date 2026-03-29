@@ -1069,11 +1069,13 @@ class StreamingSenseVoice:
 
         audio = np.array(samples, dtype=np.float32) / 32768.0  # normalize to [-1, 1]
 
-        # Use the high-level FunASR generate() API for best accuracy
+        # Use the high-level FunASR generate() API for best accuracy.
+        # Always use CPU for full inference — MPS is slower for this model size
+        # due to data transfer overhead exceeding compute savings.
         if not hasattr(self, '_funasr_model'):
             self._funasr_model = AutoModel(
                 model='iic/SenseVoiceSmall',
-                device=self.device,
+                device='cpu',
                 disable_update=True,
             )
 
@@ -1162,9 +1164,10 @@ def load_model(
         device: "auto" detects MPS (Apple GPU) availability, falls back to CPU.
     """
     if device == "auto":
-        import torch
-        device = "mps" if torch.backends.mps.is_available() else "cpu"
-        print(f"Auto-detected device: {device}", flush=True)
+        # SenseVoice-Small (~244M params) runs faster on CPU than MPS.
+        # MPS data transfer overhead exceeds compute savings for this model size.
+        device = "cpu"
+        print(f"Device: {device} (CPU is faster than MPS for this model size)", flush=True)
 
     model = StreamingSenseVoice(
         model=model_dir,
