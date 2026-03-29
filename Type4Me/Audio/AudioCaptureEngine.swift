@@ -154,7 +154,8 @@ final class AudioCaptureEngine: NSObject, @unchecked Sendable, AVCaptureAudioDat
 
         // Heartbeat log every ~5s (300 callbacks at ~60Hz)
         if levelCounter % 300 == 0 {
-            DebugFileLogger.log("audio heartbeat callback=\(levelCounter) bufferSize=\(buffer.count)")
+            let level = Self.calculateLevel(from: pcmBuffer)
+            DebugFileLogger.log("audio heartbeat callback=\(levelCounter) bufferSize=\(buffer.count) level=\(String(format: "%.3f", level))")
         }
 
         // Lazy-create converter from source format → 16kHz Int16

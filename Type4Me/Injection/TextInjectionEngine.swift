@@ -2,11 +2,6 @@ import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
 
-enum InjectionMethod: Sendable {
-    case keyboard
-    case clipboard
-}
-
 final class TextInjectionEngine: @unchecked Sendable {
 
     private struct FocusedElementSnapshot {
@@ -20,6 +15,19 @@ final class TextInjectionEngine: @unchecked Sendable {
     }
 
     private struct ClipboardSnapshot {
+        /// Only safe, non-blocking text types are captured.
+        /// Binary types (images, RTF, file promises) are skipped because
+        /// reading them can trigger lazy data providers in other apps,
+        /// blocking the calling thread indefinitely.
+        private static let safeTypes: [NSPasteboard.PasteboardType] = [
+            .string,
+            .URL,
+            .html,
+            NSPasteboard.PasteboardType("public.utf8-plain-text"),
+            NSPasteboard.PasteboardType("public.utf16-plain-text"),
+            NSPasteboard.PasteboardType("public.url"),
+        ]
+
         struct Item {
             let types: [NSPasteboard.PasteboardType]
             let data: [NSPasteboard.PasteboardType: Data]
@@ -30,28 +38,25 @@ final class TextInjectionEngine: @unchecked Sendable {
         static func capture() -> ClipboardSnapshot {
             let pb = NSPasteboard.general
             let changeCount = pb.changeCount
+            let safeSet = Set(safeTypes.map(\.rawValue))
             var items: [Item] = []
             for pbItem in pb.pasteboardItems ?? [] {
+                let textTypes = pbItem.types.filter { safeSet.contains($0.rawValue) }
+                guard !textTypes.isEmpty else { continue }
                 var dataMap: [NSPasteboard.PasteboardType: Data] = [:]
-                let types = pbItem.types
-                for type in types {
+                for type in textTypes {
                     if let data = pbItem.data(forType: type) {
                         dataMap[type] = data
                     }
                 }
-                items.append(Item(types: types, data: dataMap))
+                items.append(Item(types: textTypes, data: dataMap))
             }
             return ClipboardSnapshot(items: items, changeCount: changeCount)
         }
 
-        /// Restore clipboard to captured state.
-        /// - Parameter expectedChangeCount: the changeCount observed right after
-        ///   our `copyToClipboard` call. If the clipboard has been modified by
-        ///   another app since then, restoration is skipped.
         func restore(expectedChangeCount: Int) {
             let pb = NSPasteboard.general
             guard !items.isEmpty else { return }
-            // Don't restore if another app changed the clipboard after our write
             guard pb.changeCount == expectedChangeCount else { return }
             pb.clearContents()
             for item in items {
@@ -68,18 +73,15 @@ final class TextInjectionEngine: @unchecked Sendable {
 
     // MARK: - Public
 
-    var method: InjectionMethod = .clipboard
+    /// When true, saves and restores the clipboard around injection.
+    /// Has a small race-condition risk: if the target app hasn't finished
+    /// reading the clipboard before restore, the paste may contain stale data.
+    var preserveClipboard = true
 
     /// Inject text into the currently focused input field.
     func inject(_ text: String) -> InjectionOutcome {
         guard !text.isEmpty else { return .inserted }
-        switch method {
-        case .keyboard:
-            injectViaKeyboard(text)
-            return .inserted
-        case .clipboard:
-            return injectViaClipboard(text)
-        }
+        return injectViaClipboard(text)
     }
 
     /// Copy text to the system clipboard (used at session end).
@@ -89,56 +91,26 @@ final class TextInjectionEngine: @unchecked Sendable {
         pb.setString(text, forType: .string)
     }
 
-    // MARK: - Keyboard simulation
-
-    private func injectViaKeyboard(_ text: String) {
-        let utf16 = Array(text.utf16)
-        let chunkSize = 16
-
-        for offset in stride(from: 0, to: utf16.count, by: chunkSize) {
-            let end = min(offset + chunkSize, utf16.count)
-            var chunk = Array(utf16[offset..<end])
-            let length = chunk.count
-
-            guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
-                  let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)
-            else { continue }
-
-            keyDown.keyboardSetUnicodeString(stringLength: length, unicodeString: &chunk)
-            keyUp.keyboardSetUnicodeString(stringLength: length, unicodeString: &chunk)
-
-            keyDown.post(tap: .cghidEventTap)
-            keyUp.post(tap: .cghidEventTap)
-
-            if end < utf16.count {
-                usleep(10_000)
-            }
-        }
-    }
-
     // MARK: - Clipboard injection
 
     private func injectViaClipboard(_ text: String) -> InjectionOutcome {
-        let savedClipboard = ClipboardSnapshot.capture()
-        let beforePaste = captureFocusedElementSnapshot()
+        let savedClipboard = preserveClipboard ? ClipboardSnapshot.capture() : nil
+
+        // Check if there's a frontmost app to paste into (lightweight, no AX)
+        let hasFrontmostApp = NSWorkspace.shared.frontmostApplication != nil
 
         copyToClipboard(text)
-        // Capture changeCount AFTER our write, not before.
-        // clearContents() + setString() may increment by 1 or 2 depending on macOS version.
         let postWriteChangeCount = NSPasteboard.general.changeCount
         usleep(50_000)
         simulatePaste()
         usleep(100_000)
 
-        let afterPaste = captureFocusedElementSnapshot()
-        let outcome = inferInjectionOutcome(before: beforePaste, after: afterPaste, pastedText: text)
+        let outcome: InjectionOutcome = hasFrontmostApp ? .inserted : .copiedToClipboard
 
-        if outcome == .inserted {
-            // Paste succeeded: restore the user's original clipboard
-            usleep(50_000)  // Extra delay to ensure target app has read the clipboard
+        if outcome == .inserted, let savedClipboard {
+            usleep(50_000)
             savedClipboard.restore(expectedChangeCount: postWriteChangeCount)
         }
-        // If .copiedToClipboard: leave recognized text in clipboard as fallback
 
         return outcome
     }
@@ -171,6 +143,7 @@ final class TextInjectionEngine: @unchecked Sendable {
         }
 
         let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, 0.5)  // 500ms cap to prevent hangs
         var focusedValue: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(
             systemWide,
@@ -188,6 +161,7 @@ final class TextInjectionEngine: @unchecked Sendable {
         }
 
         let element = unsafeDowncast(focusedValue, to: AXUIElement.self)
+        AXUIElementSetMessagingTimeout(element, 0.5)
         let role = copyStringAttribute(kAXRoleAttribute as CFString, from: element)
         let value = copyStringAttribute(kAXValueAttribute as CFString, from: element)
         let isEditable =
@@ -232,15 +206,17 @@ final class TextInjectionEngine: @unchecked Sendable {
             return .inserted
         }
 
-        // No frontmost app → nothing to paste into
+        // No frontmost app → nothing to paste into (e.g. desktop)
         if before.bundleIdentifier == nil && after.bundleIdentifier == nil {
             return .copiedToClipboard
         }
 
-        // No focused UI element found (desktop, no focused window, etc.)
-        // Distinct from Electron where an element IS found but has nil role.
-        if !before.hasFocusedElement && !after.hasFocusedElement {
-            return .copiedToClipboard
+        // If there's a frontmost app but AX couldn't find a focused element
+        // (common with Electron apps like WeChat, Feishu/Lark, or AX timeout),
+        // assume paste worked. Cmd+V is a system shortcut and almost always
+        // reaches the active app regardless of AX visibility.
+        if !before.hasFocusedElement || !after.hasFocusedElement {
+            return .inserted
         }
 
         // Value changed → paste definitely worked (strongest signal)

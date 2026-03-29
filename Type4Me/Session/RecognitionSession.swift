@@ -75,6 +75,10 @@ actor RecognitionSession {
         onAudioLevel = handler
     }
 
+    // MARK: - Session generation (prevents zombie tasks after forceReset)
+
+    private var sessionGeneration: Int = 0
+
     // MARK: - Accumulated text
 
     private var currentTranscript: RecognitionTranscript = .empty
@@ -121,6 +125,9 @@ actor RecognitionSession {
 
         let provider = KeychainService.selectedASRProvider
         let effectiveMode = ASRProviderRegistry.resolvedMode(for: mode, provider: provider)
+        sessionGeneration &+= 1
+        let myGeneration = sessionGeneration
+
         self.currentMode = effectiveMode
         self.recordingStartTime = nil
         hasEmittedReadyForCurrentSession = false
@@ -202,10 +209,18 @@ actor RecognitionSession {
 
         // Capture prompt context while the user's selection is still active.
         promptContext = await PromptContext.capture()
+        guard sessionGeneration == myGeneration else {
+            DebugFileLogger.log("startRecording: zombie detected after capture, bailing")
+            return
+        }
 
         // Reset text state and clean up previous pipeline
         currentTranscript = .empty
         await finishAudioChunkPipeline(timeout: .milliseconds(100))
+        guard sessionGeneration == myGeneration else {
+            DebugFileLogger.log("startRecording: zombie detected after pipeline cleanup, bailing")
+            return
+        }
 
         // ── Phase 1: Start recording immediately (before ASR connects) ──
         // Audio chunks are buffered while WebSocket handshake is in progress.
@@ -271,9 +286,9 @@ actor RecognitionSession {
             return
         }
 
-        // Bail out if user already stopped while we were connecting
-        guard state == .recording else {
-            DebugFileLogger.log("session state changed during connect, aborting")
+        // Bail out if session was superseded or user stopped while we were connecting
+        guard sessionGeneration == myGeneration, state == .recording else {
+            DebugFileLogger.log("startRecording: zombie or state change after connect (gen=\(myGeneration) current=\(sessionGeneration) state=\(state)), bailing")
             await client.disconnect()
             self.asrClient = nil
             return
@@ -345,6 +360,7 @@ actor RecognitionSession {
     }
 
     func stopRecording() async {
+        let myGeneration = sessionGeneration
         guard state == .recording else {
             logger.warning("stopRecording called but state is \(String(describing: self.state))")
             return
@@ -361,6 +377,10 @@ actor RecognitionSession {
         audioEngine.onAudioChunk = nil
         await finishAudioChunkPipeline()
         DebugFileLogger.log("stop: audio stopped +\(ContinuousClock.now - stopT0)")
+        guard sessionGeneration == myGeneration else {
+            DebugFileLogger.log("stopRecording: zombie after audio pipeline, bailing")
+            return
+        }
 
         // For LLM modes: reuse speculative LLM if text matches,
         // otherwise fire fresh LLM immediately.
@@ -458,6 +478,10 @@ actor RecognitionSession {
         eventConsumptionTask = nil
         asrClient = nil
         hasEmittedReadyForCurrentSession = false
+        guard sessionGeneration == myGeneration else {
+            DebugFileLogger.log("stopRecording: zombie after ASR teardown, bailing")
+            return
+        }
 
         // Combine confirmed segments + any trailing unconfirmed partial.
         let effectiveText = currentTranscript.displayText
@@ -523,11 +547,7 @@ actor RecognitionSession {
             }
 
             state = .injecting
-            // Always use clipboard injection (Cmd+V). When preserveClipboard is on,
-            // injectViaClipboard already saves and restores the clipboard contents.
-            // Keyboard injection (CGEvent Unicode) has compatibility issues with
-            // cursor positioning in many apps, so we no longer use it.
-            injectionEngine.method = .clipboard
+            injectionEngine.preserveClipboard = UserDefaults.standard.bool(forKey: "tf_preserveClipboard")
 
             let injectionOutcome: InjectionOutcome
             if injectionAborted {
@@ -572,10 +592,8 @@ actor RecognitionSession {
             onASREvent?(.processingResult(text: ""))
         }
 
-        // Only reset to idle if we're still in the finishing state.
-        // If forceReset() already moved us to .starting/.recording for a new session,
-        // this zombie tail must not clobber it.
-        if state == .finishing {
+        // Only reset to idle if this is still the active session.
+        if sessionGeneration == myGeneration, state == .finishing {
             state = .idle
             hasEmittedReadyForCurrentSession = false
             currentTranscript = .empty
@@ -789,6 +807,7 @@ actor RecognitionSession {
         }
         asrClient = nil
 
+        sessionGeneration &+= 1
         state = .idle
         currentTranscript = .empty
         hasEmittedReadyForCurrentSession = false
