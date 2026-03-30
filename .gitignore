@@ -27,3 +27,4 @@ docs/plans/
 # SherpaOnnx binary (built locally via scripts/build-sherpa.sh)
 Frameworks/
 .build-sherpa/
+.worktrees/
