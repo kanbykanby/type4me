@@ -7,6 +7,7 @@ actor SenseVoiceWSClient: SpeechRecognizer {
     private let logger = Logger(subsystem: "com.type4me.asr", category: "SenseVoiceWS")
 
     private var webSocketTask: URLSessionWebSocketTask?
+    private var session: URLSession?
     private var receiveTask: Task<Void, Never>?
     private var eventContinuation: AsyncStream<RecognitionEvent>.Continuation?
     private var _events: AsyncStream<RecognitionEvent>?
@@ -66,6 +67,7 @@ actor SenseVoiceWSClient: SpeechRecognizer {
             let session = URLSession(configuration: .default)
             let task = session.webSocketTask(with: url)
             task.resume()
+            self.session = session
             self.webSocketTask = task
 
             startReceiveLoop()
@@ -216,6 +218,10 @@ actor SenseVoiceWSClient: SpeechRecognizer {
             let deltaAudio = await self.allAudioData.suffix(from: self.qwen3ConfirmedOffset)
             guard deltaAudio.count > 3200 else { return }  // at least 100ms of audio
 
+            // Snapshot the offset before the HTTP round-trip so audio arriving
+            // during the request doesn't get silently marked as processed.
+            let offsetSnapshot = await self.allAudioData.count
+
             let url = URL(string: "http://127.0.0.1:\(port)/transcribe")!
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
@@ -230,7 +236,7 @@ actor SenseVoiceWSClient: SpeechRecognizer {
                 guard !Task.isCancelled else { return }
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let text = json["text"] as? String, !text.isEmpty {
-                    await self.confirmQwen3Segment(text)
+                    await self.confirmQwen3Segment(text, offset: offsetSnapshot)
                 }
             } catch {
                 DebugFileLogger.log("Qwen3 speculative: failed \(error)")
@@ -238,9 +244,9 @@ actor SenseVoiceWSClient: SpeechRecognizer {
         }
     }
 
-    private func confirmQwen3Segment(_ text: String) {
+    private func confirmQwen3Segment(_ text: String, offset: Int) {
         qwen3ConfirmedSegments.append(text)
-        qwen3ConfirmedOffset = allAudioData.count
+        qwen3ConfirmedOffset = offset
         qwen3LatestText = nil
         qwen3HasPendingAudio = false
         DebugFileLogger.log("Qwen3 speculative: confirmed segment \(qwen3ConfirmedSegments.count): \(text.count) chars")
@@ -268,10 +274,14 @@ actor SenseVoiceWSClient: SpeechRecognizer {
     // MARK: - Disconnect
 
     func disconnect() async {
+        qwen3DebounceTask?.cancel()
+        qwen3DebounceTask = nil
         receiveTask?.cancel()
         receiveTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
+        session?.invalidateAndCancel()
+        session = nil
         eventContinuation?.finish()
         eventContinuation = nil
         _events = nil

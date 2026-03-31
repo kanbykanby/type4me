@@ -526,6 +526,7 @@ actor SenseVoiceServerManager {
     private func readPortFromStdout(pipe: Pipe, timeout: Int) async -> Int? {
         return await withCheckedContinuation { continuation in
             let handle = pipe.fileHandleForReading
+            let lock = NSLock()
             var resolved = false
 
             // Read in background
@@ -537,27 +538,30 @@ actor SenseVoiceServerManager {
                         for line in output.split(separator: "\n") {
                             if line.hasPrefix("PORT:"),
                                let portNum = Int(line.dropFirst(5)) {
-                                if !resolved {
-                                    resolved = true
-                                    continuation.resume(returning: portNum)
-                                }
+                                lock.lock()
+                                guard !resolved else { lock.unlock(); return }
+                                resolved = true
+                                lock.unlock()
+                                continuation.resume(returning: portNum)
                                 return
                             }
                         }
                     }
                 }
-                if !resolved {
-                    resolved = true
-                    continuation.resume(returning: nil)
-                }
+                lock.lock()
+                guard !resolved else { lock.unlock(); return }
+                resolved = true
+                lock.unlock()
+                continuation.resume(returning: nil)
             }
 
             // Timeout
             DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(timeout)) {
-                if !resolved {
-                    resolved = true
-                    continuation.resume(returning: nil)
-                }
+                lock.lock()
+                guard !resolved else { lock.unlock(); return }
+                resolved = true
+                lock.unlock()
+                continuation.resume(returning: nil)
             }
         }
     }

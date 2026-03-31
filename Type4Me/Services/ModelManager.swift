@@ -364,6 +364,7 @@ actor ModelManager {
                 } catch {
                     let partialDir = (modelsDir as NSString).appendingPathComponent(key)
                     try? FileManager.default.removeItem(atPath: partialDir)
+                    try? FileManager.default.removeItem(at: tempFile)
                     throw error
                 }
                 try? FileManager.default.removeItem(at: tempFile)
@@ -450,7 +451,7 @@ actor ModelManager {
                 // Success — clear resume data
                 resumeData[key] = nil
 
-                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                guard let http = response as? HTTPURLResponse, (http.statusCode == 200 || http.statusCode == 206) else {
                     throw ModelError.downloadFailed(url)
                 }
 

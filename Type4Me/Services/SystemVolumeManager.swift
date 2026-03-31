@@ -12,6 +12,9 @@ enum SystemVolumeManager {
     /// The volume level saved before lowering.
     private static var savedVolume: Float?
 
+    /// UserDefaults key for crash recovery.
+    private static let savedVolumeKey = "tf_savedSystemVolume"
+
     /// Lower system volume to a fraction of the current level.
     /// Saves the current volume so it can be restored later.
     /// - Parameter fraction: Target fraction (e.g. 0.2 = 20% of current volume).
@@ -23,6 +26,7 @@ enum SystemVolumeManager {
         guard current > 0.05 else { return }
 
         savedVolume = current
+        UserDefaults.standard.set(current, forKey: savedVolumeKey)
         let target = current * max(0, min(1, fraction))
         setVolume(device: deviceID, volume: target)
         logger.info("Volume lowered: \(current, format: .fixed(precision: 2)) → \(target, format: .fixed(precision: 2))")
@@ -32,10 +36,23 @@ enum SystemVolumeManager {
     static func restore() {
         guard let saved = savedVolume else { return }
         savedVolume = nil
+        UserDefaults.standard.removeObject(forKey: savedVolumeKey)
 
         guard let deviceID = defaultOutputDevice() else { return }
         setVolume(device: deviceID, volume: saved)
         logger.info("Volume restored: \(saved, format: .fixed(precision: 2))")
+    }
+
+    /// Restore volume from a previous session if the app crashed while volume was lowered.
+    /// Call once at app launch.
+    static func restoreIfNeeded() {
+        let saved = UserDefaults.standard.float(forKey: savedVolumeKey)
+        guard saved > 0 else { return }
+        UserDefaults.standard.removeObject(forKey: savedVolumeKey)
+
+        guard let deviceID = defaultOutputDevice() else { return }
+        setVolume(device: deviceID, volume: saved)
+        logger.info("Crash recovery: volume restored to \(saved, format: .fixed(precision: 2))")
     }
 
     // MARK: - CoreAudio

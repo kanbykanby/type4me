@@ -87,7 +87,7 @@ final class AudioCaptureEngine: NSObject, @unchecked Sendable, AVCaptureAudioDat
             NSLog("[Audio] Warm-up skipped: microphone permission not granted")
             return
         }
-        outputQueue.async { [weak self] in
+        DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
             do {
                 guard let device = AVCaptureDevice.default(for: .audio) else { return }
@@ -167,9 +167,13 @@ final class AudioCaptureEngine: NSObject, @unchecked Sendable, AVCaptureAudioDat
         }
         output?.setSampleBufferDelegate(nil, queue: nil)
         captureSession = nil
-        converter = nil
-        levelCounter = 0
         flushRemaining()
+        bufferLock.lock()
+        converter = nil
+        onAudioChunk = nil
+        onAudioLevel = nil
+        bufferLock.unlock()
+        levelCounter = 0
         NSLog("[Audio] Capture session stopped")
     }
 
@@ -198,14 +202,18 @@ final class AudioCaptureEngine: NSObject, @unchecked Sendable, AVCaptureAudioDat
         }
 
         // Lazy-create converter from source format → 16kHz Int16
+        bufferLock.lock()
         if converter == nil {
             let sourceFormat = pcmBuffer.format
             converter = AVAudioConverter(from: sourceFormat, to: Self.targetFormat)
             NSLog("[Audio] Input format: %@", sourceFormat.description)
         }
-
-        guard let converter else { return }
-        convert(buffer: pcmBuffer, using: converter)
+        guard let conv = converter else {
+            bufferLock.unlock()
+            return
+        }
+        bufferLock.unlock()
+        convert(buffer: pcmBuffer, using: conv)
     }
 
     // MARK: - Internal
@@ -333,9 +341,15 @@ private extension CMSampleBuffer {
 
         guard let blockBuffer = CMSampleBufferGetDataBuffer(self) else { return nil }
         let length = CMBlockBufferGetDataLength(blockBuffer)
-        guard let channelData = pcmBuffer.floatChannelData else { return nil }
 
-        CMBlockBufferCopyDataBytes(blockBuffer, atOffset: 0, dataLength: length, destination: channelData[0])
+        if let floatData = pcmBuffer.floatChannelData {
+            CMBlockBufferCopyDataBytes(blockBuffer, atOffset: 0, dataLength: length, destination: floatData[0])
+        } else if let int16Data = pcmBuffer.int16ChannelData {
+            CMBlockBufferCopyDataBytes(blockBuffer, atOffset: 0, dataLength: length, destination: int16Data[0])
+        } else {
+            return nil
+        }
+
         return pcmBuffer
     }
 }

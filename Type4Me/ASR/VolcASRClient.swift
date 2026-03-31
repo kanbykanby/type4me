@@ -27,6 +27,7 @@ actor VolcASRClient: SpeechRecognizer {
     // MARK: - State
 
     private var webSocketTask: URLSessionWebSocketTask?
+    private var session: URLSession?
     private var receiveTask: Task<Void, Never>?
 
     private var eventContinuation: AsyncStream<RecognitionEvent>.Continuation?
@@ -65,6 +66,7 @@ actor VolcASRClient: SpeechRecognizer {
         let session = URLSession(configuration: .default)
         let task = session.webSocketTask(with: request)
         task.resume()
+        self.session = session
         self.webSocketTask = task
 
         // Send full_client_request (no compression, plain JSON)
@@ -176,6 +178,8 @@ actor VolcASRClient: SpeechRecognizer {
         receiveTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
+        session?.invalidateAndCancel()
+        session = nil
         eventContinuation?.finish()
         eventContinuation = nil
         _events = nil

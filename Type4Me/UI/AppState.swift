@@ -431,6 +431,8 @@ final class AppState {
 
     // MARK: Private
 
+    private var hideGeneration = 0
+
     private func showDone(message: String = L("已完成", "Done")) {
         feedbackMessage = message
         barPhase = .done
@@ -438,9 +440,11 @@ final class AppState {
     }
 
     private func scheduleAutoHide(for phase: FloatingBarPhase, delay: Duration) {
+        hideGeneration += 1
+        let myGeneration = hideGeneration
         Task { @MainActor in
             try? await Task.sleep(for: delay)
-            guard barPhase == phase else { return }
+            guard barPhase == phase, hideGeneration == myGeneration else { return }
             barPhase = .hidden
             onHidePanel?()
         }

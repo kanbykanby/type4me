@@ -208,8 +208,9 @@ struct LLMSettingsCard: View, SettingsCardHelpers {
                 request.timeoutInterval = 10
                 _ = try? await URLSession.shared.data(for: request)
             }
-            serverRunning = false
             DebugFileLogger.log("LLM unloaded via /llm/unload")
+            // Also stop the server process if ASR doesn't need it
+            await stopServerIfUnneeded()
         }
     }
 
