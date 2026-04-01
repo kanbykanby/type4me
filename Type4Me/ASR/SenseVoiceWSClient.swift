@@ -1,23 +1,17 @@
 import Foundation
 import os
 
-/// ASR client that connects to the local SenseVoice Python server via WebSocket.
+/// ASR client that sends audio to the local Qwen3-ASR Python server for final transcription.
+/// SenseVoice streaming is now handled natively via SenseVoiceASRClient (sherpa-onnx).
+/// This client is only used for Qwen3 final calibration.
 actor SenseVoiceWSClient: SpeechRecognizer {
 
     private let logger = Logger(subsystem: "com.type4me.asr", category: "SenseVoiceWS")
 
-    private var webSocketTask: URLSessionWebSocketTask?
-    private var session: URLSession?
-    private var receiveTask: Task<Void, Never>?
     private var eventContinuation: AsyncStream<RecognitionEvent>.Continuation?
     private var _events: AsyncStream<RecognitionEvent>?
 
-    /// Running text from the server (latest partial or final).
-    private var currentText: String = ""
     private var confirmedSegments: [String] = []
-
-    /// Qwen3-only mode: no SenseVoice streaming, just accumulate audio for Qwen3 final.
-    private var qwen3OnlyMode = false
 
     // Qwen3 incremental speculative transcription
     private var qwen3DebounceTask: Task<Void, Never>?
@@ -42,16 +36,12 @@ actor SenseVoiceWSClient: SpeechRecognizer {
         let (stream, continuation) = AsyncStream<RecognitionEvent>.makeStream()
         self.eventContinuation = continuation
         self._events = stream
-        currentText = ""
         confirmedSegments = []
         resetQwen3State()
-        qwen3OnlyMode = false
 
-        let mgr = SenseVoiceServerManager.shared
-        let svPort = SenseVoiceServerManager.currentPort
-
-        if svPort != nil {
-            // SenseVoice available: connect WebSocket for streaming
+        if SenseVoiceServerManager.currentQwen3Port != nil {
+            // Qwen3 available, wait for health
+            let mgr = SenseVoiceServerManager.shared
             var healthy = false
             for _ in 0..<30 {
                 if await mgr.isHealthy() { healthy = true; break }
@@ -60,35 +50,16 @@ actor SenseVoiceWSClient: SpeechRecognizer {
             guard healthy else {
                 throw SenseVoiceWSError.serverNotHealthy
             }
-            guard let url = await mgr.serverWSURL else {
-                throw SenseVoiceWSError.serverNotRunning
-            }
-
-            let session = URLSession(configuration: .default)
-            let task = session.webSocketTask(with: url)
-            task.resume()
-            self.session = session
-            self.webSocketTask = task
-
-            startReceiveLoop()
             eventContinuation?.yield(.ready)
-            logger.info("SenseVoiceWS connected to \(url)")
-        } else if SenseVoiceServerManager.currentQwen3Port != nil {
-            // Qwen3-only mode: no streaming, just accumulate audio for final
-            qwen3OnlyMode = true
-            eventContinuation?.yield(.ready)
-            logger.info("Qwen3-only mode (no SenseVoice streaming)")
-            DebugFileLogger.log("Qwen3-only mode: no streaming, final via Qwen3")
+            logger.info("Qwen3 ASR client ready (port \(SenseVoiceServerManager.currentQwen3Port!))")
         } else {
-            // Neither available
-            let svEnabled = UserDefaults.standard.object(forKey: "tf_sensevoiceEnabled") as? Bool ?? true
+            // Qwen3 not started, try to start
             let q3Enabled = UserDefaults.standard.object(forKey: "tf_qwen3FinalEnabled") as? Bool ?? true
-            if !svEnabled && !q3Enabled {
+            if !q3Enabled {
                 throw SenseVoiceWSError.allModelsDisabled
             }
-            // At least one is enabled but not started yet, try to start
-            try await mgr.start()
-            if SenseVoiceServerManager.currentPort == nil && SenseVoiceServerManager.currentQwen3Port == nil {
+            try await SenseVoiceServerManager.shared.start()
+            if SenseVoiceServerManager.currentQwen3Port == nil {
                 throw SenseVoiceWSError.serverNotRunning
             }
             try await connect(config: config, options: options)
@@ -99,35 +70,20 @@ actor SenseVoiceWSClient: SpeechRecognizer {
     // MARK: - Send Audio
 
     func sendAudio(_ data: Data) async throws {
-        if !qwen3OnlyMode {
-            guard let task = webSocketTask else { return }
-            try await task.send(.data(data))
-        }
-
-        // Accumulate audio for Qwen3 (speculative or final-only)
+        // Accumulate audio for Qwen3 final
         allAudioData.append(data)
         qwen3HasPendingAudio = true
-        if !qwen3OnlyMode {
-            scheduleSpeculativeQwen3()
-        }
+        scheduleSpeculativeQwen3()
     }
 
     // MARK: - End Audio
 
-    /// Whether Qwen3 final verification is enabled (user setting).
-    private static var isQwen3FinalEnabled: Bool {
-        UserDefaults.standard.object(forKey: "tf_qwen3FinalEnabled") as? Bool ?? true
-    }
-
     func endAudio() async throws {
         qwen3DebounceTask?.cancel()
 
-        let qwen3Enabled = Self.isQwen3FinalEnabled || qwen3OnlyMode
         let port = SenseVoiceServerManager.currentQwen3Port
-        let task = webSocketTask
 
-        // Qwen3 final: cancel WebSocket, send all audio to Qwen3, use its result
-        if qwen3Enabled, let port, allAudioData.count > 3200 {
+        if let port, allAudioData.count > 3200 {
             let newAudioBytes = allAudioData.count - qwen3ConfirmedOffset
             let hasQwen3Result = !qwen3ConfirmedSegments.isEmpty
             let newAudioTrivial = newAudioBytes < 2 * 16000 * 2
@@ -150,12 +106,8 @@ actor SenseVoiceWSClient: SpeechRecognizer {
                 DebugFileLogger.log("Qwen3 full final: \(finalText.count) chars")
             }
 
-            // Cancel SenseVoice WebSocket if connected (don't let its final propagate)
-            task?.cancel(with: .normalClosure, reason: nil)
-
             if !finalText.isEmpty {
                 confirmedSegments = [finalText]
-                currentText = ""
                 let transcript = RecognitionTranscript(
                     confirmedSegments: confirmedSegments,
                     partialText: "",
@@ -163,27 +115,13 @@ actor SenseVoiceWSClient: SpeechRecognizer {
                     isFinal: true
                 )
                 eventContinuation?.yield(.transcript(transcript))
-                eventContinuation?.yield(.completed)
             } else {
-                // Qwen3 failed, emit whatever SenseVoice had as final
-                let fallback = (confirmedSegments + (currentText.isEmpty ? [] : [currentText])).joined()
-                DebugFileLogger.log("Qwen3 final failed, using SenseVoice fallback: \(fallback.count) chars")
-                let transcript = RecognitionTranscript(
-                    confirmedSegments: confirmedSegments,
-                    partialText: "",
-                    authoritativeText: fallback,
-                    isFinal: true
-                )
-                eventContinuation?.yield(.transcript(transcript))
-                eventContinuation?.yield(.completed)
+                DebugFileLogger.log("Qwen3 final failed, empty result")
             }
-        } else if let task {
-            // Qwen3 disabled: SenseVoice final via WebSocket
-            try await task.send(.data(Data()))
-            DebugFileLogger.log("SenseVoice final (Qwen3 disabled)")
+            eventContinuation?.yield(.completed)
         } else {
-            // No WebSocket and no Qwen3 - nothing to do
-            DebugFileLogger.log("endAudio: no WebSocket and no Qwen3 port")
+            // No Qwen3 port or audio too short
+            DebugFileLogger.log("endAudio: no Qwen3 port or audio too short")
             eventContinuation?.yield(.completed)
         }
 
@@ -260,118 +198,15 @@ actor SenseVoiceWSClient: SpeechRecognizer {
         qwen3HasPendingAudio = false
     }
 
-    // MARK: - Text Cleaning
-
-    /// Keep only: Chinese (CJK Unified), English letters, digits, spaces
-    private static let nonZhEnPattern = try! NSRegularExpression(pattern: #"[^\u4e00-\u9fff\u3400-\u4dbfa-zA-Z0-9 ]"#)
-
-    /// Remove non-Chinese/English characters from streaming partials (e.g. Japanese kana, Korean).
-    private static func filterNonZhEn(_ text: String) -> String {
-        let range = NSRange(text.startIndex..., in: text)
-        return nonZhEnPattern.stringByReplacingMatches(in: text, range: range, withTemplate: "")
-    }
-
     // MARK: - Disconnect
 
     func disconnect() async {
         qwen3DebounceTask?.cancel()
         qwen3DebounceTask = nil
-        receiveTask?.cancel()
-        receiveTask = nil
-        webSocketTask?.cancel(with: .normalClosure, reason: nil)
-        webSocketTask = nil
-        session?.invalidateAndCancel()
-        session = nil
         eventContinuation?.finish()
         eventContinuation = nil
         _events = nil
-        logger.info("SenseVoiceWS disconnected")
-    }
-
-    // MARK: - Receive Loop
-
-    private func startReceiveLoop() {
-        receiveTask = Task { [weak self] in
-            guard let self else { return }
-            while !Task.isCancelled {
-                do {
-                    guard let task = await self.webSocketTask else { break }
-                    let message = try await task.receive()
-                    await self.handleMessage(message)
-                } catch {
-                    if !Task.isCancelled {
-                        await self.logger.info("SenseVoiceWS receive loop ended: \(error)")
-                        await self.eventContinuation?.yield(.completed)
-                    }
-                    break
-                }
-            }
-            await self.eventContinuation?.finish()
-        }
-    }
-
-    private func handleMessage(_ message: URLSessionWebSocketTask.Message) {
-        switch message {
-        case .string(let text):
-            guard let data = text.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let type = json["type"] as? String
-            else { return }
-
-            switch type {
-            case "transcript":
-                var recognizedText = json["text"] as? String ?? ""
-                let isFinal = json["is_final"] as? Bool ?? false
-
-                if !isFinal {
-                    // Filter non-Chinese/English characters from streaming partials
-                    recognizedText = Self.filterNonZhEn(recognizedText)
-                }
-
-                if isFinal {
-                    if !recognizedText.isEmpty {
-                        confirmedSegments.append(recognizedText)
-                    }
-                    currentText = ""
-                } else {
-                    currentText = recognizedText
-                }
-
-                let composedText = (confirmedSegments + (currentText.isEmpty ? [] : [currentText])).joined()
-
-                let transcript = RecognitionTranscript(
-                    confirmedSegments: confirmedSegments,
-                    partialText: isFinal ? "" : currentText,
-                    authoritativeText: isFinal ? composedText : "",
-                    isFinal: isFinal
-                )
-                eventContinuation?.yield(.transcript(transcript))
-
-                DebugFileLogger.log("SenseVoiceWS: confirmed=\(confirmedSegments.count) partial=\(currentText.count) composed=\(composedText.count) isFinal=\(isFinal)")
-
-            case "completed":
-                eventContinuation?.yield(.completed)
-                logger.info("SenseVoiceWS: server signaled completion")
-
-            case "error":
-                let msg = json["message"] as? String ?? "Unknown server error"
-                logger.error("SenseVoiceWS server error: \(msg)")
-                eventContinuation?.yield(.error(NSError(
-                    domain: "SenseVoice", code: -1,
-                    userInfo: [NSLocalizedDescriptionKey: msg]
-                )))
-
-            default:
-                break
-            }
-
-        case .data:
-            // We don't expect binary from server
-            break
-
-        @unknown default:
-            break
-        }
+        logger.info("Qwen3 ASR client disconnected")
     }
 }
 
