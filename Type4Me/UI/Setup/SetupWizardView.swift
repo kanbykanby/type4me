@@ -7,10 +7,10 @@ struct SetupWizardView: View {
     @Environment(AppState.self) private var appState
     @State private var step = 0
     @AppStorage("tf_language") private var language = AppLanguage.systemDefault
-    @AppStorage("tf_use_cloud") private var useCloud = false
+    @State private var selectedEdition: AppEdition = .member
 
-    /// Cloud path skips mode demos and provider config: welcome → path → permissions → ready
-    private var totalSteps: Int { useCloud ? 4 : 7 }
+    private var isMember: Bool { selectedEdition == .member }
+    private let totalSteps = 5
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,11 +29,7 @@ struct SetupWizardView: View {
 
             // Steps
             Group {
-                if useCloud {
-                    cloudStepContent
-                } else {
-                    byokStepContent
-                }
+                stepContent
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .transition(.asymmetric(
@@ -46,37 +42,20 @@ struct SetupWizardView: View {
         .id(language)
     }
 
-    // MARK: - Cloud Path Steps (4 total: welcome, path, permissions, ready)
+    // MARK: - Step Router
 
     @ViewBuilder
-    private var cloudStepContent: some View {
-        switch step {
-        case 0: welcomeStep
-        case 1: pathSelectionStep
-        case 2: permissionsStep
-        default: readyStep
-        }
-    }
-
-    // MARK: - BYOK Path Steps (7 total: welcome, path, quickDemo, customDemo, permissions, provider, ready)
-
-    @ViewBuilder
-    private var byokStepContent: some View {
+    private var stepContent: some View {
         switch step {
         case 0: welcomeStep
         case 1: pathSelectionStep
         case 2:
-            VStack(spacing: 0) {
-                QuickModeDemoStep()
-                navigationFooter { step = 3 }
+            if isMember {
+                loginStep
+            } else {
+                providerStep
             }
-        case 3:
-            VStack(spacing: 0) {
-                CustomModeDemoStep()
-                navigationFooter { step = 4 }
-            }
-        case 4: permissionsStep
-        case 5: providerStep
+        case 3: permissionsStep
         default: readyStep
         }
     }
@@ -144,27 +123,27 @@ struct SetupWizardView: View {
 
             HStack(spacing: 16) {
                 pathCard(
-                    icon: "cloud.fill",
-                    title: "Type4Me Cloud",
+                    icon: "person.crop.circle.badge.checkmark",
+                    title: L("官方会员", "Official Member"),
                     detail: L(
-                        "无需 API Key，免费体验 2000 字",
-                        "No API key needed, 2000 chars free"
+                        "无需配置，2000 字免费体验",
+                        "No setup needed, 2000 chars free"
                     ),
-                    isSelected: useCloud
+                    isSelected: isMember
                 ) {
-                    useCloud = true
+                    selectedEdition = .member
                 }
 
                 pathCard(
                     icon: "key.fill",
-                    title: L("自定义 API", "Custom API"),
+                    title: L("自带 API", "Bring Your Own API"),
                     detail: L(
-                        "使用你自己的 API Key（火山、OpenAI 等）",
-                        "Bring your own API keys (Volcano, OpenAI, etc.)"
+                        "使用你自己的 API Key",
+                        "Use your own API keys"
                     ),
-                    isSelected: !useCloud
+                    isSelected: !isMember
                 ) {
-                    useCloud = false
+                    selectedEdition = .byoKey
                 }
             }
             .frame(width: 500)
@@ -216,14 +195,158 @@ struct SetupWizardView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Permissions
+    // MARK: - Step 2 (Member): Login
+
+    @State private var email = ""
+    @State private var codeSent = false
+    @State private var verificationCode = ""
+    @State private var isLoading = false
+    @State private var loginError: String?
+    @State private var loginSuccess = false
+
+    private var loginStep: some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            if loginSuccess {
+                // Success state
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundStyle(TF.success)
+
+                Text(L("2000 字免费额度已激活", "2000 free characters activated"))
+                    .font(.system(size: 16, weight: .medium))
+
+                Spacer()
+
+                navigationFooter { step = 3 }
+            } else if codeSent {
+                // Verification code input
+                VStack(spacing: 8) {
+                    Text(L("输入验证码", "Enter Verification Code"))
+                        .font(.system(size: 18, weight: .semibold))
+                    Text(L("验证码已发送到 \(email)", "Code sent to \(email)"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(spacing: 12) {
+                    TextField(L("验证码", "Verification Code"), text: $verificationCode)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 280)
+                        .multilineTextAlignment(.center)
+
+                    if let error = loginError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+
+                    Button {
+                        verifyCode()
+                    } label: {
+                        if isLoading {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(width: 280)
+                        } else {
+                            Text(L("验证", "Verify"))
+                                .frame(width: 280)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(TF.amber)
+                    .disabled(verificationCode.isEmpty || isLoading)
+
+                    Button(L("重新发送", "Resend Code")) {
+                        sendCode()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(TF.amber)
+                    .font(.caption)
+                    .disabled(isLoading)
+                }
+
+                Spacer()
+            } else {
+                // Email input
+                VStack(spacing: 8) {
+                    Text(L("登录", "Sign In"))
+                        .font(.system(size: 18, weight: .semibold))
+                    Text(L("输入邮箱，获取验证码", "Enter your email to get a verification code"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(spacing: 12) {
+                    TextField(L("邮箱地址", "Email Address"), text: $email)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 280)
+                        .multilineTextAlignment(.center)
+
+                    if let error = loginError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+
+                    Button {
+                        sendCode()
+                    } label: {
+                        if isLoading {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(width: 280)
+                        } else {
+                            Text(L("发送验证码", "Send Code"))
+                                .frame(width: 280)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(TF.amber)
+                    .disabled(email.isEmpty || isLoading)
+                }
+
+                Spacer()
+            }
+        }
+    }
+
+    private func sendCode() {
+        isLoading = true
+        loginError = nil
+        Task {
+            do {
+                try await CloudAuthManager.shared.sendCode(email: email)
+                codeSent = true
+            } catch {
+                loginError = error.localizedDescription
+            }
+            isLoading = false
+        }
+    }
+
+    private func verifyCode() {
+        isLoading = true
+        loginError = nil
+        Task {
+            do {
+                try await CloudAuthManager.shared.verify(email: email, code: verificationCode)
+                loginSuccess = true
+            } catch {
+                loginError = error.localizedDescription
+            }
+            isLoading = false
+        }
+    }
+
+    // MARK: - Step 3: Permissions
 
     @State private var hasMic = false
     @State private var hasAccessibility = false
 
     private var permissionsStep: some View {
-        let nextStep = useCloud ? 3 : 5
-        return VStack(spacing: 24) {
+        VStack(spacing: 24) {
             Spacer()
 
             Text(L("授予权限", "Grant Permissions"))
@@ -247,7 +370,6 @@ struct SetupWizardView: View {
                     detail: L("全局快捷键 + 文字注入", "Global hotkeys + text injection"),
                     granted: hasAccessibility
                 ) {
-                    // Register in system list AND open system preferences
                     PermissionManager.promptAccessibilityPermission()
                     PermissionManager.openAccessibilitySettings()
                 }
@@ -266,7 +388,7 @@ struct SetupWizardView: View {
 
             Spacer()
 
-            navigationFooter { step = nextStep }
+            navigationFooter { step = 4 }
         }
         .onAppear { refreshPermissions() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -279,7 +401,7 @@ struct SetupWizardView: View {
         hasAccessibility = AXIsProcessTrusted()
     }
 
-    // MARK: - Provider + Credentials (BYOK only)
+    // MARK: - Step 2 (BYOK): Provider + Credentials
 
     @State private var selectedProvider: ASRProvider = .volcano
     @State private var credentialValues: [String: String] = [:]
@@ -294,7 +416,6 @@ struct SetupWizardView: View {
             return !val.isEmpty
         }
     }
-
 
     private var providerStep: some View {
         VStack(spacing: 24) {
@@ -320,7 +441,6 @@ struct SetupWizardView: View {
                 .labelsHidden()
                 .frame(width: 300)
                 .onChange(of: selectedProvider) { _, newProvider in
-                    // Prefill defaults
                     var defaults: [String: String] = [:]
                     let fields = ASRProviderRegistry.configType(for: newProvider)?.credentialFields ?? []
                     for field in fields where !field.defaultValue.isEmpty {
@@ -328,7 +448,6 @@ struct SetupWizardView: View {
                     }
                     credentialValues = defaults
                 }
-
 
                 // Dynamic credential fields
                 ForEach(currentFields) { field in
@@ -361,7 +480,7 @@ struct SetupWizardView: View {
             Spacer()
 
             HStack {
-                Button(L("跳过", "Skip")) { step = 6 }
+                Button(L("跳过", "Skip")) { step = 3 }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -372,7 +491,7 @@ struct SetupWizardView: View {
                         )
                         KeychainService.selectedASRProvider = selectedProvider
                     }
-                    step = 6
+                    step = 3
                 }
                     .buttonStyle(.borderedProminent)
                     .tint(TF.amber)
@@ -382,7 +501,7 @@ struct SetupWizardView: View {
         }
     }
 
-    // MARK: - Ready
+    // MARK: - Step 4: Ready
 
     private var readyStep: some View {
         VStack(spacing: 28) {
@@ -404,6 +523,10 @@ struct SetupWizardView: View {
             Spacer()
 
             Button(L("开始使用", "Start Using")) {
+                AppEditionMigration.current = selectedEdition
+                if selectedEdition == .member {
+                    KeychainService.selectedASRProvider = .cloud
+                }
                 appState.hasCompletedSetup = true
                 NSApp.keyWindow?.close()
             }
