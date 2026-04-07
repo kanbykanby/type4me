@@ -496,7 +496,7 @@ actor RecognitionSession {
                             return result
                         } catch {
                             DebugFileLogger.log("stop: fresh LLM FAILED +\(ContinuousClock.now - stopT0) error=\(error)")
-                            await self.setPendingLLMError(error)
+                            self.setPendingLLMError(error)
                             return nil
                         }
                     }
@@ -848,7 +848,7 @@ actor RecognitionSession {
         let failureFlag = UploadFailureFlag()
         self.uploadFailureFlag = failureFlag
 
-        audioChunkSenderTask = Task.detached { [weak self] in
+        audioChunkSenderTask = Task.detached {
             var chunkCount = 0
             var lastLogTime: ContinuousClock.Instant?
             for await data in stream {
@@ -946,7 +946,7 @@ actor RecognitionSession {
                 return result
             } catch {
                 DebugFileLogger.log("speculative LLM: failed \(error)")
-                await self.setPendingLLMError(error)
+                self.setPendingLLMError(error)
                 return nil
             }
         }
