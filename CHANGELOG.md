@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.9.1 — 悬浮预览 + 应用级片段 + ASR 连接池 (2026-04-13)
+
+### 新功能
+- 悬浮文本预览：鼠标悬停录音条时弹出完整转录文本（设置可关）
+- 应用级片段替换：针对不同 App 设置不同的替换规则，Chrome 风格 Tab 切换
+- Prompt 优化器 v2：任务分类、智能框架扩展、结构化输出规则
+- 正式写作 Prompt 升级：单要点内容不再强制编号，新增示例，旧版自动迁移
+- Qwen3-ASR 服务崩溃自动重启（最多 3 次）
+- 模型内嵌部署：SenseVoice/VAD 模型随 app 打包，首次启动自动部署
+
+### 性能优化
+- ASR 连接预热：启动时预建 TCP+TLS 连接，首次录音延迟降低 150-300ms
+- 共享 URLSession 连接池：所有 ASR 客户端复用连接，减少 TCP 握手开销
+- 火山 ASR 丢弃 partial 检测（LCP 算法），本地保留 partial 防闪烁
+- SenseVoice 代际过滤 + VAD 残余样本处理，提升识别稳定性
+- Cloud 配额非阻塞检查，录音启动不再等待网络
+
+### 改进
+- 设置页重组：录音行为拆分为"录音"和"语音识别"两张卡片
+- 模式设置支持滚动，保存按钮移到顶部，显示模板变量提示
+- 快速纠错后自动导航到词汇表 Tab
+- 反馈音统一满音量，移除 Speaker Keep-Alive 功能
+- Fn 键可用作快捷键修饰键
+- 选中文本读取超时增加到 500ms，减少误判
+
+### Bug 修复
+- 剪贴板恢复时序修复（50ms→300ms），改善 VS Code/Slack/飞书等 Electron 应用兼容性
+- Claude LLM 错误处理：检测 SSE error 和 stop_reason: "error"，60s 超时保护
+- SQL 注入防护：HistoryStore 改用参数化查询
+- 系统音量崩溃恢复：启动/退出时自动还原因崩溃未恢复的音量
+- 录音状态管理：区分 preparing/recording 阶段，session idle 等待防止状态污染
+- 浮窗动画竞态修复：generation counter 防止 hide/show 冲突
+
 ## v1.9.0 — Developer ID 签名 + 蓝牙支持 + 注入改进 (2026-04-11)
 
 ### 重要变更: Apple Developer ID 签名
