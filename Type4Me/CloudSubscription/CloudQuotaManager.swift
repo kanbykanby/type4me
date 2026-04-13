@@ -8,6 +8,7 @@ final class CloudQuotaManager: ObservableObject {
     @Published private(set) var plan: String = "free"
     @Published private(set) var isPaid: Bool = false
     @Published private(set) var freeCharsRemaining: Int = 0
+    @Published private(set) var freeCharsTotal: Int = 2000
     @Published private(set) var expiresAt: Date?
     @Published private(set) var weekChars: Int = 0
     @Published private(set) var totalChars: Int = 0
@@ -36,12 +37,14 @@ final class CloudQuotaManager: ObservableObject {
                 let plan: String
                 let is_paid: Bool
                 let remaining_chars: Int
+                let total_chars_limit: Int
                 let expires_at: String?
             }
             let r = try JSONDecoder().decode(QuotaResponse.self, from: data)
             plan = r.plan
             isPaid = r.is_paid
             freeCharsRemaining = r.remaining_chars
+            freeCharsTotal = r.total_chars_limit
             if let e = r.expires_at {
                 expiresAt = ISO8601DateFormatter().date(from: e)
             }
@@ -71,8 +74,11 @@ final class CloudQuotaManager: ObservableObject {
 
     /// Check if the user can still use cloud services.
     func canUse() async -> Bool {
-        await refresh()
-        return isPaid || freeCharsRemaining > 0
+        // Return immediately from cache to avoid blocking recording start.
+        // Trigger a background refresh if stale; server is the ultimate authority.
+        let result = isPaid || freeCharsRemaining > 0
+        Task { await refresh() }
+        return result
     }
 
     /// Optimistically deduct characters locally (server is authoritative).

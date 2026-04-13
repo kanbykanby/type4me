@@ -73,7 +73,7 @@ actor VolcASRClient: SpeechRecognizer {
             request.setValue(connectId, forHTTPHeaderField: "X-Api-Connect-Id")
         }
 
-        let session = URLSession(configuration: options.urlSessionConfiguration)
+        let session = options.resolvedSession
         let task = session.webSocketTask(with: request)
         task.resume()
         self.session = session
@@ -93,8 +93,12 @@ actor VolcASRClient: SpeechRecognizer {
         lastTranscript = .empty
         audioPacketCount = 0
         totalAudioBytes = 0
+        didRequestEnd = false
         sessionStartTime = ContinuousClock.now
         lastTranscriptTime = nil
+        localConfirmedSegments = []
+        lastPartialText = ""
+        lastServerConfirmedCount = 0
         NSLog("[ASR] Sending full_client_request (%d bytes), connectId=%@", message.count, connectId)
         do {
             try await task.send(.data(message))
@@ -154,9 +158,19 @@ actor VolcASRClient: SpeechRecognizer {
 
     private var audioPacketCount = 0
     private var totalAudioBytes = 0
+    private var didRequestEnd = false
     private var lastTranscript: RecognitionTranscript = .empty
     private var lastTranscriptTime: ContinuousClock.Instant?
     private var sessionStartTime: ContinuousClock.Instant?
+
+    /// Locally promoted confirmed segments from dropped partials.
+    /// When the server starts a new utterance without confirming the previous partial,
+    /// we preserve the old partial here to prevent UI flicker.
+    private var localConfirmedSegments: [String] = []
+    /// Previous partial text for drop detection.
+    private var lastPartialText: String = ""
+    /// Previous server confirmed count, to detect genuine new confirmations vs stale state.
+    private var lastServerConfirmedCount: Int = 0
 
     func sendAudio(_ data: Data) async throws {
         guard let task = webSocketTask else { return }
@@ -177,6 +191,7 @@ actor VolcASRClient: SpeechRecognizer {
             audioData: Data(),
             isLast: true
         )
+        didRequestEnd = true
         try await task.send(.data(packet))
         NSLog("[ASR] Sent last audio packet (empty, isLast=true)")
     }
@@ -188,7 +203,7 @@ actor VolcASRClient: SpeechRecognizer {
         receiveTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
-        session?.invalidateAndCancel()
+        // Don't invalidate shared session — just release our reference
         session = nil
         eventContinuation?.finish()
         eventContinuation = nil
@@ -209,13 +224,16 @@ actor VolcASRClient: SpeechRecognizer {
                 } catch {
                     NSLog("[ASR] Receive loop error: %@", String(describing: error))
                     if !Task.isCancelled {
-                        if await self.audioPacketCount == 0 {
+                        if await self.didRequestEnd {
+                            // We already sent end-of-stream — socket close is normal.
+                            NSLog("[ASR] Treating as normal session end (sent %d packets)", await self.audioPacketCount)
+                        } else if await self.audioPacketCount == 0 {
                             // No audio sent yet — real connection/auth error.
                             await self.emitEvent(.error(error))
                         } else {
-                            // Audio was flowing — socket close is normal session end
-                            // (especially through proxies that don't relay WS close frames).
-                            NSLog("[ASR] Treating as normal session end (sent %d packets)", await self.audioPacketCount)
+                            // Audio was flowing but we never sent end-of-stream — network failure.
+                            NSLog("[ASR] Unexpected close during audio (sent %d packets)", await self.audioPacketCount)
+                            await self.emitEvent(.error(error))
                         }
                         await self.emitEvent(.completed)
                     }
@@ -302,18 +320,61 @@ actor VolcASRClient: SpeechRecognizer {
     }
 
     private func makeTranscript(from result: VolcASRResult, isFinal: Bool) -> RecognitionTranscript {
-        let confirmedSegments = result.utterances
+        var serverConfirmed = result.utterances
             .filter(\.definite)
             .map(\.text)
             .filter { !$0.isEmpty }
         let partialText = result.utterances.last(where: { !$0.definite && !$0.text.isEmpty })?.text ?? ""
-        let composedText = (confirmedSegments + (partialText.isEmpty ? [] : [partialText])).joined()
+
+        let prevServerConfirmedCount = lastServerConfirmedCount
+        lastServerConfirmedCount = serverConfirmed.count
+
+        // When the server confirms new segments, sync local state
+        if serverConfirmed.count > localConfirmedSegments.count {
+            localConfirmedSegments = serverConfirmed
+        }
+
+        // Detect dropped partial: server started a new utterance without confirming the old one.
+        // Conditions: (1) server confirmed count didn't increase since last response,
+        // (2) old partial was substantial, (3) new partial shares little common prefix with old (LCP ratio < 0.5).
+        if !isFinal,
+           serverConfirmed.count <= prevServerConfirmedCount,
+           lastPartialText.count >= 4,
+           !partialText.isEmpty
+        {
+            let lcp = longestCommonPrefixLength(lastPartialText, partialText)
+            let ratio = Double(lcp) / Double(lastPartialText.count)
+            if ratio < 0.5 {
+                NSLog("[ASR] Dropped partial detected: \"%@\" → \"%@\" (LCP=%d ratio=%.2f), promoting to local confirmed",
+                      lastPartialText, partialText, lcp, ratio)
+                localConfirmedSegments.append(lastPartialText)
+            }
+        }
+
+        lastPartialText = partialText
+
+        // Use local confirmed segments (which may include promoted partials)
+        let effectiveConfirmed = localConfirmedSegments.count > serverConfirmed.count
+            ? localConfirmedSegments : serverConfirmed
+
+        let composedText = (effectiveConfirmed + (partialText.isEmpty ? [] : [partialText])).joined()
         let authoritativeText = result.text.isEmpty ? composedText : result.text
         return RecognitionTranscript(
-            confirmedSegments: confirmedSegments,
+            confirmedSegments: effectiveConfirmed,
             partialText: partialText,
             authoritativeText: authoritativeText,
             isFinal: isFinal
         )
+    }
+
+    private func longestCommonPrefixLength(_ a: String, _ b: String) -> Int {
+        var count = 0
+        var ai = a.startIndex, bi = b.startIndex
+        while ai < a.endIndex, bi < b.endIndex, a[ai] == b[bi] {
+            count += 1
+            ai = a.index(after: ai)
+            bi = b.index(after: bi)
+        }
+        return count
     }
 }

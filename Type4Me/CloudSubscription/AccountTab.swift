@@ -355,7 +355,7 @@ struct AccountTab: View, SettingsCardHelpers {
                 SettingsDivider()
                 SettingsRow(
                     label: L("剩余字符", "Remaining"),
-                    value: "\(quota.freeCharsRemaining) / 2000",
+                    value: "\(quota.freeCharsRemaining) / \(quota.freeCharsTotal)",
                     statusColor: quota.freeCharsRemaining < 500 ? TF.settingsAccentAmber : nil
                 )
                 SettingsDivider()

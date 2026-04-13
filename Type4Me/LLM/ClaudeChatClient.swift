@@ -6,12 +6,14 @@ actor ClaudeChatClient: LLMClient {
     private let logger = Logger(subsystem: "com.type4me.llm", category: "ClaudeChatClient")
 
     private var session: URLSession {
+        let config = URLSessionConfiguration.default
+        // Cap total request duration (including streaming) to 60s so a stalled
+        // server can't hang the for-await loop indefinitely.
+        config.timeoutIntervalForResource = 60
         if ProxyBypassMode.current.bypassLLM {
-            let config = URLSessionConfiguration.default
             config.connectionProxyDictionary = [:]
-            return URLSession(configuration: config)
         }
-        return URLSession.shared
+        return URLSession(configuration: config)
     }
 
     /// Pre-establish TCP+TLS connection so the first real request skips handshake.
@@ -77,6 +79,15 @@ actor ClaudeChatClient: LLMClient {
                 }
             case "message_stop":
                 break
+            case "error":
+                let detail = event.error?.message ?? "unknown"
+                logger.error("Claude SSE error event: \(detail)")
+                throw LLMError.requestFailed(-1)
+            case "message_delta":
+                if let stopReason = event.delta?.stop_reason, stopReason == "error" {
+                    logger.error("Claude message_delta stop_reason=error")
+                    throw LLMError.requestFailed(-1)
+                }
             default:
                 continue
             }
@@ -108,8 +119,15 @@ private struct ClaudeMessage: Encodable, Sendable {
 private struct ClaudeStreamEvent: Decodable, Sendable {
     let type: String
     let delta: ClaudeDelta?
+    let error: ClaudeErrorDetail?
 }
 
 private struct ClaudeDelta: Decodable, Sendable {
     let text: String?
+    let stop_reason: String?
+}
+
+private struct ClaudeErrorDetail: Decodable, Sendable {
+    let type: String?
+    let message: String?
 }

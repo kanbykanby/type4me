@@ -134,15 +134,20 @@ actor HistoryStore {
     }
 
     func count(from start: Date? = nil, to end: Date? = nil) -> Int {
-        var sql = "SELECT COUNT(*) FROM recognition_history"
-        let iso = ISO8601DateFormatter()
-        if let start, let end {
-            sql += " WHERE created_at >= '\(iso.string(from: start))' AND created_at < '\(iso.string(from: end))'"
+        let sql: String
+        if start != nil && end != nil {
+            sql = "SELECT COUNT(*) FROM recognition_history WHERE created_at >= ? AND created_at < ?;"
+        } else {
+            sql = "SELECT COUNT(*) FROM recognition_history;"
         }
-        sql += ";"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
         defer { sqlite3_finalize(stmt) }
+        if let start, let end {
+            let iso = ISO8601DateFormatter()
+            bind(stmt, 1, iso.string(from: start))
+            bind(stmt, 2, iso.string(from: end))
+        }
         return sqlite3_step(stmt) == SQLITE_ROW ? Int(sqlite3_column_int(stmt, 0)) : 0
     }
 

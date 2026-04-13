@@ -78,6 +78,10 @@ actor SenseVoiceASRClient: SpeechRecognizer {
     private var finalized = false
     /// Number of confirmed segment decodes currently in flight.
     private var pendingConfirmations = 0
+    /// Generation counter to invalidate in-flight decode tasks from stale sessions.
+    private var generation: Int = 0
+    /// Leftover samples from VAD processing (< 512) carried to next sendAudio call.
+    private var vadResidualSamples: [Float] = []
 
     var events: AsyncStream<RecognitionEvent> {
         if let existing = _events {
@@ -232,6 +236,8 @@ actor SenseVoiceASRClient: SpeechRecognizer {
         partialRecognitionInFlight = false
         finalized = false
         pendingConfirmations = 0
+        generation += 1
+        vadResidualSamples = []
 
         let svModelDir = sherpaConfig.senseVoiceModelDir
         let vadModelDir = sherpaConfig.vadModelDir
@@ -353,6 +359,12 @@ actor SenseVoiceASRClient: SpeechRecognizer {
             samplesSkipped = skipInitialSamples
         }
 
+        // Prepend leftover samples from previous sendAudio call
+        if !vadResidualSamples.isEmpty {
+            floatSamples = vadResidualSamples + floatSamples
+            vadResidualSamples = []
+        }
+
         // Feed audio to VAD in chunks of 512 (Silero window size)
         var offset = 0
         while offset + 512 <= floatSamples.count {
@@ -382,10 +394,11 @@ actor SenseVoiceASRClient: SpeechRecognizer {
                 pendingConfirmations += 1
                 let rec = recognizer
                 let punct = punctProcessor
+                let gen = generation
                 Task { [weak self] in
                     let result = rec.decode(samples: samples, sampleRate: 16_000)
                     let segmentText = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    await self?.confirmSegment(segmentText, punctProcessor: punct)
+                    await self?.confirmSegment(segmentText, punctProcessor: punct, generation: gen)
                 }
             }
 
@@ -400,12 +413,18 @@ actor SenseVoiceASRClient: SpeechRecognizer {
                 partialRecognitionInFlight = true
                 let bufferSnapshot = speechBuffer
                 let rec = recognizer
+                let gen = generation
                 Task { [weak self] in
                     let result = rec.decode(samples: bufferSnapshot, sampleRate: 16_000)
                     let partialText = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    await self?.updatePartial(partialText)
+                    await self?.updatePartial(partialText, generation: gen)
                 }
             }
+        }
+
+        // Save remaining samples (< 512) for next sendAudio call
+        if offset < floatSamples.count {
+            vadResidualSamples = Array(floatSamples[offset...])
         }
 
         // If speech just ended (no longer detected) and buffer has leftover, clear it.
@@ -515,6 +534,7 @@ actor SenseVoiceASRClient: SpeechRecognizer {
     // MARK: - Disconnect
 
     func disconnect() async {
+        generation += 1
         eventContinuation?.finish()
         eventContinuation = nil
         _events = nil
@@ -525,14 +545,15 @@ actor SenseVoiceASRClient: SpeechRecognizer {
         currentPartialText = ""
         speechBuffer = []
         allAudioData = Data()
+        vadResidualSamples = []
         logger.info("SenseVoiceASR disconnected")
     }
 
     // MARK: - Async recognition callbacks
 
-    private func confirmSegment(_ text: String, punctProcessor: SherpaPunctuationProcessor?) {
+    private func confirmSegment(_ text: String, punctProcessor: SherpaPunctuationProcessor?, generation gen: Int) {
         pendingConfirmations = max(0, pendingConfirmations - 1)
-        guard !finalized else { return }
+        guard gen == generation, !finalized else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let punctuated = punctProcessor?.addPunctuation(to: trimmed) ?? trimmed
@@ -542,9 +563,9 @@ actor SenseVoiceASRClient: SpeechRecognizer {
         emitTranscript(isFinal: false)
     }
 
-    private func updatePartial(_ text: String) {
+    private func updatePartial(_ text: String, generation gen: Int) {
         partialRecognitionInFlight = false
-        guard !finalized else { return }  // endAudio already fired, ignore stale partial
+        guard gen == generation, !finalized else { return }  // stale session or endAudio already fired
         if text != currentPartialText {
             currentPartialText = text
             emitTranscript(isFinal: false)
@@ -574,7 +595,7 @@ actor SenseVoiceASRClient: SpeechRecognizer {
         request.httpMethod = "POST"
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         request.httpBody = audio
-        request.timeoutInterval = 30
+        request.timeoutInterval = 120  // 10 min audio needs ~60-90s on M1/M2
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

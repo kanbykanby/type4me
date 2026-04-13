@@ -91,7 +91,10 @@ final class TextInjectionEngine: @unchecked Sendable {
     func finishClipboardRestore() {
         guard let pending = pendingClipboardRestore else { return }
         pendingClipboardRestore = nil
-        usleep(50_000)
+        // Electron apps (VS Code, Slack, Notion, Feishu) may need 200-500ms
+        // to read the clipboard after Cmd+V. 150ms (post-paste 100 + this 50)
+        // was too fast. Bumped to 300ms here for ~400ms total.
+        usleep(300_000)
         pending.snapshot.restore(expectedChangeCount: pending.changeCount)
     }
 
@@ -125,7 +128,13 @@ final class TextInjectionEngine: @unchecked Sendable {
 
         // Snapshot AFTER paste and compare to detect if text landed
         let after = captureFocusedElementSnapshot()
-        let outcome = inferInjectionOutcome(before: before, after: after, pastedText: text)
+        var outcome = inferInjectionOutcome(before: before, after: after, pastedText: text)
+
+        // "Always copy to clipboard" is ON: text on clipboard is by design,
+        // no need to show the fallback message.
+        if !preserveClipboard && outcome == .copiedToClipboard {
+            outcome = .inserted
+        }
 
         // Defer clipboard restore so .finalized can be emitted sooner
         if outcome == .inserted, let savedClipboard {
@@ -328,8 +337,9 @@ final class TextInjectionEngine: @unchecked Sendable {
             return .copiedToClipboard
         }
 
-        // AX completely blind (common with WeChat, Feishu/Lark and other
-        // Electron apps). Cmd+V still works in these apps, so assume success.
+        // AX completely blind (WeChat, Feishu, etc.): if we have a frontmost
+        // app but can't see the focused element, assume Cmd+V worked.
+        // Desktop/no-app cases are already handled above (bundleIdentifier == nil).
         if !before.hasFocusedElement || !after.hasFocusedElement {
             return .inserted
         }

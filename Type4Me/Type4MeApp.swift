@@ -49,8 +49,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSLog("[Type4Me] applicationDidFinishLaunching")
+        // Restore system volume if previous session crashed while volume was lowered
+        SystemVolumeManager.restoreIfNeeded()
         #if HAS_CLOUD_SUBSCRIPTION
         AppEditionMigration.migrateIfNeeded()
+        Task { await RegionDetector.detect() }
         #endif
         // Show or hide Dock icon based on user preference
         let showDock = UserDefaults.standard.object(forKey: "tf_showDockIcon") as? Bool ?? true
@@ -61,6 +64,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Sync hotwords to Volcengine cloud table (async, non-blocking)
         VolcHotwordSyncManager.syncIfNeeded()
+
+        // Deploy bundled models (local variant) before anything touches model paths
+        ModelManager.deployBundledModelsIfNeeded()
 
         DebugFileLogger.startSession()
         DebugFileLogger.log("applicationDidFinishLaunching")
@@ -76,8 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SoundFeedback.warmUp()
         AudioKeepAliveManager.syncState()
 
-        // Pre-warm audio subsystem so the first recording starts instantly
+        // Pre-warm audio subsystem and ASR connection so the first recording starts instantly
         Task { await session.warmUp() }
+        session.warmUpASRConnection()
 
         // Bridge audio level → isolated meter (no SwiftUI observation overhead)
         Task {
@@ -106,7 +113,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             // Lower volume after start sound finishes playing
                             let targetVolumePercent = UserDefaults.standard.integer(forKey: "tf_volumeReduction")
                             if targetVolumePercent >= 0 {
-                                try? await Task.sleep(for: .milliseconds(500))
+                                let delayMs = SoundFeedback.startSoundDurationMs()
+                                if delayMs > 0 {
+                                    try? await Task.sleep(for: .milliseconds(delayMs))
+                                }
                                 guard appState.barPhase == .recording else { return }
                                 SystemVolumeManager.lower(to: Float(targetVolumePercent) / 100.0)
                             }
@@ -115,6 +125,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         appState.setLiveTranscript(transcript)
                     case .completed:
                         appState.stopRecording()
+                        if await session.stoppedByMaxDuration {
+                            appState.processingLabelOverride = L("已达最大时长", "Max duration reached")
+                        }
                         self.hotkeyManager.isProcessing = false
                         self.safeResetHotkeyState()
                     case .processingLabelOverride(let label):
@@ -258,11 +271,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // Safety: if already recording, the toggle state is out of sync.
                     // Redirect to stop so we don't discard accumulated text.
                     if phase == .recording || phase == .preparing {
-                        NSLog("[Type4Me] >>> HOTKEY: toggle desync – onStart while recording, redirecting to STOP")
-                        DebugFileLogger.log("hotkey toggle desync: onStart while recording, redirecting to stop")
+                        NSLog("[Type4Me] >>> HOTKEY: toggle desync – onStart while recording, redirecting to STOP (phase=%@)", String(describing: phase))
+                        DebugFileLogger.log("hotkey toggle desync: onStart while recording, redirecting to stop phase=\(phase)")
                         MainActor.assumeIsolated { self.hotkeyManager.resetActiveState() }
                         MainActor.assumeIsolated { self.appState.stopRecording() }
-                        Task { await self.session.stopRecording() }
+                        if phase == .preparing {
+                            Task { await self.session.cancelRecording() }
+                        } else {
+                            Task { await self.session.stopRecording() }
+                        }
                         return
                     }
 
@@ -284,15 +301,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.appState.currentMode = effectiveMode
                         self.appState.startRecording()
                     }
-                    Task { await self.session.startRecording(mode: effectiveMode) }
+                    Task {
+                        // Wait for previous session to fully clean up before starting
+                        let ready = await self.session.awaitIdle()
+                        if !ready {
+                            NSLog("[Type4Me] >>> HOTKEY: previous session did not reach idle in time")
+                            DebugFileLogger.log("hotkey start: awaitIdle timed out")
+                        }
+                        await self.session.startRecording(mode: effectiveMode)
+                    }
                 },
                 onStop: { [weak self] in
                     guard let self else { return }
 
-                    NSLog("[Type4Me] >>> HOTKEY: Record STOP")
-                    DebugFileLogger.log("hotkey record stop")
+                    let phase = MainActor.assumeIsolated { self.appState.barPhase }
+                    NSLog("[Type4Me] >>> HOTKEY: Record STOP (phase=%@)", String(describing: phase))
+                    DebugFileLogger.log("hotkey record stop phase=\(phase)")
                     MainActor.assumeIsolated { self.appState.stopRecording() }
-                    Task { await self.session.stopRecording() }
+                    if phase == .preparing {
+                        Task { await self.session.cancelRecording() }
+                    } else {
+                        Task { await self.session.stopRecording() }
+                    }
                 }
             )
         }
@@ -329,9 +359,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("[Type4Me] >>> HOTKEY: ESC abort injection (phase=%@)", String(describing: phase))
             DebugFileLogger.log("hotkey ESC abort injection phase=\(phase)")
             MainActor.assumeIsolated { self.appState.stopRecording() }
-            Task {
-                await self.session.abortInjection()
-                await self.session.stopRecording()
+            if phase == .preparing {
+                Task { await self.session.cancelRecording() }
+            } else {
+                Task {
+                    await self.session.abortInjection()
+                    await self.session.stopRecording()
+                }
             }
             return true
         }
@@ -510,6 +544,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static var openSettingsAction: (() -> Void)?
 
     func applicationWillTerminate(_ notification: Notification) {
+        SystemVolumeManager.restore()
         // Synchronous kill: don't rely on async Task, app exits immediately after this returns
         SenseVoiceServerManager.killAllServerProcesses()
     }

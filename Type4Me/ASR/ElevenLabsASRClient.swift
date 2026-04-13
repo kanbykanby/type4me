@@ -129,8 +129,7 @@ actor ElevenLabsASRClient: SpeechRecognizer {
                     if Task.isCancelled { break }
                     logger.info("ElevenLabs receive loop ended: \(String(describing: error), privacy: .public)")
                     let didClose = await self.didRequestClose
-                    let packetCount = await self.audioPacketCount
-                    if didClose || packetCount > 0 {
+                    if didClose {
                         await self.emitEvent(.completed)
                     } else {
                         await self.emitEvent(.error(error))

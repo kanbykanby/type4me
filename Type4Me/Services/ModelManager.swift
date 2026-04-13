@@ -136,6 +136,41 @@ actor ModelManager {
         }
     }
 
+    // MARK: - Deploy Bundled Models
+
+    /// Copy bundled models from app bundle (Contents/Resources/Models/) to
+    /// Application Support on first launch. No-op if models already exist or
+    /// if the bundle doesn't contain models (non-local variant).
+    nonisolated static func deployBundledModelsIfNeeded() {
+        guard let bundledModelsURL = Bundle.main.resourceURL?
+            .appendingPathComponent("Models") else { return }
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: bundledModelsURL.path) else { return }
+
+        // Ensure destination directory exists
+        let destDir = defaultModelsDir
+        try? fm.createDirectory(atPath: destDir, withIntermediateDirectories: true)
+
+        // Models to deploy: SenseVoice + Silero VAD
+        let modelDirs = [
+            StreamingModel.senseVoiceSmall.directoryName,
+            AuxModelType.sileroVad.directoryName,
+        ]
+
+        for dirName in modelDirs {
+            let src = bundledModelsURL.appendingPathComponent(dirName)
+            let dst = (destDir as NSString).appendingPathComponent(dirName)
+            guard fm.fileExists(atPath: src.path) else { continue }
+            guard !fm.fileExists(atPath: dst) else { continue }
+            do {
+                try fm.copyItem(atPath: src.path, toPath: dst)
+                NSLog("[ModelManager] Deployed bundled model: %@", dirName)
+            } catch {
+                NSLog("[ModelManager] Failed to deploy %@: %@", dirName, error.localizedDescription)
+            }
+        }
+    }
+
     // MARK: - Selected Model (persisted)
 
     private static let selectedModelKey = "tf_selectedStreamingModel"
@@ -318,6 +353,9 @@ actor ModelManager {
 
     // MARK: - Generic Download
 
+    /// Minimum free disk space required before starting any model download (2 GB).
+    private let minimumFreeDiskSpace: Int64 = 2_000_000_000
+
     private func downloadGeneric(
         key: String,
         url: URL,
@@ -327,6 +365,15 @@ actor ModelManager {
     ) async throws {
         // Cancel any existing download task but keep resume data for continuation
         cancelGeneric(key: key, clearResumeData: false)
+
+        // Check available disk space before starting download
+        if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()),
+           let freeSpace = attrs[.systemFreeSize] as? Int64,
+           freeSpace < minimumFreeDiskSpace {
+            let freeGB = String(format: "%.1f", Double(freeSpace) / 1_000_000_000)
+            logger.error("Insufficient disk space: \(freeGB) GB free, need 2 GB minimum")
+            throw ModelError.insufficientDiskSpace(freeGB: freeGB)
+        }
 
         let destDir = (modelsDir as NSString).appendingPathComponent(key)
         logger.info("Starting download: \(key) from \(url.absoluteString)")
@@ -591,6 +638,7 @@ actor ModelManager {
     enum ModelError: Error, LocalizedError {
         case downloadFailed(URL)
         case extractionFailed
+        case insufficientDiskSpace(freeGB: String)
 
         var errorDescription: String? {
             switch self {
@@ -598,6 +646,8 @@ actor ModelManager {
                 return L("模型下载失败: \(url.lastPathComponent)", "Model download failed: \(url.lastPathComponent)")
             case .extractionFailed:
                 return L("模型解压失败", "Model extraction failed")
+            case .insufficientDiskSpace(let freeGB):
+                return L("磁盘空间不足（剩余 \(freeGB) GB），需要至少 2 GB", "Insufficient disk space (\(freeGB) GB free), need at least 2 GB")
             }
         }
     }

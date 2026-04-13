@@ -16,7 +16,7 @@ struct PromptContext: Sendable {
         let clipboard = await MainActor.run {
             NSPasteboard.general.string(forType: .string) ?? ""
         }
-        let selected = await readSelectedTextAsync(timeoutMs: 200)
+        let selected = await readSelectedTextAsync(timeoutMs: 500)
         return PromptContext(selectedText: selected, clipboardText: clipboard)
     }
 

@@ -50,17 +50,6 @@ enum SoundFeedback {
     /// Pre-prepared AVAudioPlayer instances keyed by label (used for keep-alive, primer).
     nonisolated(unsafe) private static var cachedPlayers: [String: AVAudioPlayer] = [:]
 
-    /// Cached WAV data for creating fresh AVAudioPlayer instances on each play.
-    nonisolated(unsafe) private static var cachedWAVData: [String: Data] = [:]
-
-    /// Retains the currently-playing player so it doesn't get deallocated.
-    nonisolated(unsafe) private static var activePlayer: AVAudioPlayer?
-
-    /// Persistent silent player that keeps the audio output path (especially BT A2DP)
-    /// alive. Without this, BT speakers need to re-establish the audio stream on each
-    /// play(), losing the first ~200-500ms. Mirrors Chromium's persistent AudioContext.
-    nonisolated(unsafe) private static var keepAlivePlayer: AVAudioPlayer?
-
     /// Cached PCM buffers for tone generation and bundled sounds.
     nonisolated(unsafe) private static var cachedBuffers: [String: AVAudioPCMBuffer] = [:]
 
@@ -71,15 +60,15 @@ enum SoundFeedback {
 
     private static let startSpec = ToneSpec(
         tones: [(frequency: 587, duration: 0.06), (frequency: 880, duration: 0.09)],
-        volume: 0.52, label: "start"
+        volume: 1.0, label: "start"
     )
     private static let stopSpec = ToneSpec(
         tones: [(frequency: 740, duration: 0.04), (frequency: 1175, duration: 0.06)],
-        volume: 0.3, label: "stop"
+        volume: 1.0, label: "stop"
     )
     private static let errorSpec = ToneSpec(
         tones: [(frequency: 330, duration: 0.08), (frequency: 220, duration: 0.1)],
-        volume: 0.35, label: "error"
+        volume: 1.0, label: "error"
     )
 
     // MARK: - Public API
@@ -92,6 +81,29 @@ enum SoundFeedback {
             DebugFileLogger.log("sound warmUp")
             prepareBuffers()
             preparePlayers()
+        }
+    }
+
+    /// Duration of the current start sound in milliseconds.
+    /// Returns 0 when sound is off, falls back to 500 if buffers aren't ready.
+    static func startSoundDurationMs() -> Int {
+        let style = StartSoundStyle(
+            rawValue: UserDefaults.standard.string(forKey: "tf_startSound") ?? StartSoundStyle.chime.rawValue
+        ) ?? .chime
+
+        let label: String
+        switch style {
+        case .off: return 0
+        case .chime: label = startSpec.label
+        case .pluck: label = "pluck"
+        case .submerge: label = "submerge"
+        case .pong: label = "pong"
+        case .waterDrop1, .waterDrop2, .keyboard: label = style.rawValue
+        }
+
+        return soundQueue.sync {
+            guard let buffer = cachedBuffers[label] else { return 500 }
+            return Int(Double(buffer.frameLength) / sampleRate * 1000)
         }
     }
 
@@ -167,53 +179,6 @@ enum SoundFeedback {
         }
     }
 
-    // MARK: - Speaker Keep-Alive
-
-    /// Start a persistent silent audio loop to keep the output path warm.
-    /// Essential for BT speakers whose A2DP link drops between sounds.
-    static func enableSpeakerKeepAlive() {
-        soundQueue.async {
-            guard keepAlivePlayer == nil else { return }
-            // 16kHz tone at 0.005 amplitude, looping forever.
-            // 16kHz is at the upper edge of adult hearing (most people over 25
-            // can't hear it). Amplitude 0.005 (~-46dB) is very quiet even for
-            // those who can. BT SBC codec supports up to ~16kHz, so the data
-            // passes through to keep the DAC and amplifier active.
-            let frames = Int(sampleRate)
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: engineFormat, frameCapacity: AVAudioFrameCount(frames)) else { return }
-            buffer.frameLength = AVAudioFrameCount(frames)
-            let data = buffer.floatChannelData![0]
-            for i in 0..<frames {
-                data[i] = Float(sin(2.0 * .pi * 16000.0 * Double(i) / sampleRate) * 0.005)
-            }
-            guard let wavData = pcmBufferToWAVData(buffer),
-                  let player = try? AVAudioPlayer(data: wavData) else { return }
-            player.numberOfLoops = -1
-            player.volume = 1.0
-            applyOutputDevice(to: player)
-            player.play()
-            keepAlivePlayer = player
-            NSLog("[SoundFeedback] keep-alive started (16kHz)")
-            DebugFileLogger.log("speaker keep-alive started (16kHz)")
-        }
-    }
-
-    static func disableSpeakerKeepAlive() {
-        soundQueue.async {
-            keepAlivePlayer?.stop()
-            keepAlivePlayer = nil
-            NSLog("[SoundFeedback] keep-alive stopped")
-            DebugFileLogger.log("speaker keep-alive stopped")
-        }
-    }
-
-    /// Restart keep-alive if active (e.g., after output device change).
-    static func restartKeepAliveIfNeeded() {
-        guard UserDefaults.standard.bool(forKey: "tf_speakerKeepAlive") else { return }
-        disableSpeakerKeepAlive()
-        enableSpeakerKeepAlive()
-    }
-
     // MARK: - Buffer Preparation
 
     private static func prepareBuffers() {
@@ -246,7 +211,7 @@ enum SoundFeedback {
             }
             do {
                 let player = try AVAudioPlayer(data: wavData)
-                player.volume = 0.4  // match Howler.js volume
+                player.volume = 1.0
                 player.prepareToPlay()
                 cachedPlayers[label] = player
                 NSLog("[SoundFeedback] prepared: %@ (%.0fms)", label,
@@ -328,6 +293,7 @@ enum SoundFeedback {
                 p.stop()
             }
             applyOutputDevice(to: player)
+            player.volume = volume
             player.currentTime = 0
             player.play()
             NSLog("[SoundFeedback] %@ playing via AVAudioPlayer (vol=%.2f)", label, player.volume)

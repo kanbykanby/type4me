@@ -65,8 +65,18 @@ actor OpenAIASRClient: SpeechRecognizer {
 
     func endAudio() async throws {
         guard let config else { return }
-        guard !audioBuffer.isEmpty else {
-            eventContinuation?.yield(.error(OpenAIASRError.emptyAudio))
+
+        // 0.5s at 16kHz, 16-bit PCM = 16000 bytes
+        let minBytes = Int(0.5 * 16000) * 2
+        guard audioBuffer.count >= minBytes else {
+            // Too short for Whisper — skip API call to avoid hallucination
+            let transcript = RecognitionTranscript(
+                confirmedSegments: [],
+                partialText: "",
+                authoritativeText: "",
+                isFinal: true
+            )
+            eventContinuation?.yield(.transcript(transcript))
             eventContinuation?.yield(.completed)
             eventContinuation?.finish()
             return
@@ -111,7 +121,7 @@ actor OpenAIASRClient: SpeechRecognizer {
         request.httpMethod = "POST"
         request.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 60
+        request.timeoutInterval = 120  // Whisper may need >60s for long recordings
 
         // Build multipart form data
         var body = Data()

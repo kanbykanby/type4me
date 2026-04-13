@@ -263,7 +263,7 @@ private actor BailianTaskStartGate {
     }
 }
 
-private final class BailianWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
+private final class BailianWebSocketDelegate: NSObject, URLSessionWebSocketDelegate, URLSessionTaskDelegate {
 
     private let taskStartGate: BailianTaskStartGate
 
@@ -286,6 +286,17 @@ private final class BailianWebSocketDelegate: NSObject, URLSessionWebSocketDeleg
                     reason: reasonText
                 )
             )
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        guard let error else { return }
+        Task {
+            await taskStartGate.markFailure(error)
         }
     }
 }

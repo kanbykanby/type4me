@@ -30,26 +30,29 @@ struct ModesSettingsTab: View {
 
             HStack(alignment: .top, spacing: 0) {
                 // Left: mode list (all modes)
-                VStack(spacing: 3) {
-                    ForEach(modes) { mode in
-                        modeRow(mode)
-                    }
-
-                    HStack(spacing: 6) {
-                        Button(action: addMode) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 11))
-                                Text(L("添加模式", "Add mode"))
-                                    .font(.system(size: 11, weight: .medium))
-                            }
-                            .foregroundStyle(TF.settingsTextTertiary)
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(spacing: 3) {
+                        ForEach(modes) { mode in
+                            modeRow(mode)
                         }
-                        .buttonStyle(.plain)
-                        Spacer()
+
+                        HStack(spacing: 6) {
+                            Button(action: addMode) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 11))
+                                    Text(L("添加模式", "Add mode"))
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                                .foregroundStyle(TF.settingsTextTertiary)
+                            }
+                            .buttonStyle(.plain)
+                            Spacer()
+                        }
+                        .padding(.top, 8)
                     }
-                    .padding(.top, 8)
                 }
+                .scrollBounceBehavior(.basedOnSize)
                 .frame(width: 320)
                 .padding(.trailing, 16)
 
@@ -60,20 +63,23 @@ struct ModesSettingsTab: View {
                     .padding(.vertical, 4)
 
                 // Right: detail for selected mode
-                Group {
-                    if let mode = selectedMode {
-                        modeDetail(mode)
-                    } else {
-                        Text(L("选择一个模式查看详情", "Select a mode to view details"))
-                            .font(.system(size: 12))
-                            .foregroundStyle(TF.settingsTextTertiary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ScrollView(.vertical, showsIndicators: true) {
+                    Group {
+                        if let mode = selectedMode {
+                            modeDetail(mode)
+                        } else {
+                            Text(L("选择一个模式查看详情", "Select a mode to view details"))
+                                .font(.system(size: 12))
+                                .foregroundStyle(TF.settingsTextTertiary)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
                 }
+                .scrollBounceBehavior(.basedOnSize)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(.leading, 16)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear {
             selectedASRProvider = KeychainService.selectedASRProvider
@@ -789,6 +795,40 @@ private struct ModeDetailInner: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Header + save
+            HStack(spacing: 6) {
+                Text(name.isEmpty ? L("新模式", "New Mode") : name)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(TF.settingsText)
+
+                Spacer()
+
+                if saveStatus == .saved {
+                    HStack(spacing: 4) {
+                        Circle().fill(TF.settingsAccentGreen).frame(width: 6, height: 6)
+                        Text(L("已保存", "Saved")).font(.system(size: 10)).foregroundStyle(TF.settingsAccentGreen)
+                    }
+                    .transition(.opacity)
+                }
+                Button(L("保存", "Save")) {
+                    var updated = mode
+                    updated.name = name
+                    updated.processingLabel = processingLabel
+                    updated.prompt = prompt
+                    onSave(updated)
+                    withAnimation { saveStatus = .saved }
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 5)
+                .background(RoundedRectangle(cornerRadius: 6).fill(
+                    isDirty ? TF.settingsNavActive : TF.settingsTextTertiary
+                ))
+                .disabled(!isDirty)
+            }
+
             // Name
             VStack(alignment: .leading, spacing: 4) {
                 Text(L("名称", "Name"))
@@ -820,42 +860,20 @@ private struct ModeDetailInner: View {
 
             // Prompt
             VStack(alignment: .leading, spacing: 4) {
-                Text(L("Prompt 模板", "Prompt Template"))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(TF.settingsTextTertiary)
+                HStack(spacing: 6) {
+                    Text(L("Prompt 模板", "Prompt Template"))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(TF.settingsTextTertiary)
+                    Group {
+                        Text("{text}") + Text("  ") + Text("{selected}") + Text("  ") + Text("{clipboard}")
+                    }
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(TF.settingsTextTertiary.opacity(0.6))
+                }
                 AutoSizingTextEditor(text: $prompt)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                     .background(RoundedRectangle(cornerRadius: 8).fill(TF.settingsCardAlt))
-            }
-
-            // Save row
-            HStack(spacing: 8) {
-                Spacer()
-                if saveStatus == .saved {
-                    HStack(spacing: 4) {
-                        Circle().fill(TF.settingsAccentGreen).frame(width: 6, height: 6)
-                        Text(L("已保存", "Saved")).font(.system(size: 10)).foregroundStyle(TF.settingsAccentGreen)
-                    }
-                    .transition(.opacity)
-                }
-                Button(L("保存", "Save")) {
-                    var updated = mode
-                    updated.name = name
-                    updated.processingLabel = processingLabel
-                    updated.prompt = prompt
-                    onSave(updated)
-                    withAnimation { saveStatus = .saved }
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 5)
-                .background(RoundedRectangle(cornerRadius: 6).fill(
-                    isDirty ? TF.settingsNavActive : TF.settingsTextTertiary
-                ))
-                .disabled(!isDirty)
             }
 
             Spacer()
@@ -1035,11 +1053,18 @@ private struct FormalWritingDetailInner: View {
             // Short text exemption
             shortTextExemptionSection
 
-            // Prompt (官方)
+            // Prompt 模板
             VStack(alignment: .leading, spacing: 4) {
-                Text(L("官方 Prompt", "Official Prompt"))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(TF.settingsTextTertiary)
+                HStack(spacing: 6) {
+                    Text(L("Prompt 模板", "Prompt Template"))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(TF.settingsTextTertiary)
+                    Group {
+                        Text("{text}") + Text("  ") + Text("{selected}") + Text("  ") + Text("{clipboard}")
+                    }
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(TF.settingsTextTertiary.opacity(0.6))
+                }
                 AutoSizingTextEditor(text: $prompt)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)

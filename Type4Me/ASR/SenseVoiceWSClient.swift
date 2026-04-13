@@ -59,11 +59,21 @@ actor SenseVoiceWSClient: SpeechRecognizer {
                 throw SenseVoiceWSError.allModelsDisabled
             }
             try await SenseVoiceServerManager.shared.start()
-            if SenseVoiceServerManager.currentQwen3Port == nil {
+            guard SenseVoiceServerManager.currentQwen3Port != nil else {
                 throw SenseVoiceWSError.serverNotRunning
             }
-            try await connect(config: config, options: options)
-            return
+            // Server started, wait for health (non-recursive)
+            let mgr = SenseVoiceServerManager.shared
+            var healthy = false
+            for _ in 0..<30 {
+                if await mgr.isHealthy() { healthy = true; break }
+                try await Task.sleep(for: .seconds(1))
+            }
+            guard healthy else {
+                throw SenseVoiceWSError.serverNotHealthy
+            }
+            eventContinuation?.yield(.ready)
+            logger.info("Qwen3 ASR client ready after server start (port \(SenseVoiceServerManager.currentQwen3Port!))")
         }
     }
 
@@ -165,7 +175,7 @@ actor SenseVoiceWSClient: SpeechRecognizer {
             request.httpMethod = "POST"
             request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
             request.httpBody = Data(deltaAudio)
-            request.timeoutInterval = 30
+            request.timeoutInterval = 120  // 10 min audio needs ~60-90s on M1/M2
 
             DebugFileLogger.log("Qwen3 speculative: sending \(deltaAudio.count) bytes (offset \(await self.qwen3ConfirmedOffset))")
 

@@ -454,6 +454,7 @@ final class HotkeyManager: NSObject {
         case 56, 60: return .maskShift
         case 58, 61: return .maskAlternate
         case 59, 62: return .maskControl
+        case 63: return .maskSecondaryFn
         default: return nil
         }
     }

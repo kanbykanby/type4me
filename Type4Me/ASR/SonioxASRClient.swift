@@ -33,6 +33,7 @@ actor SonioxASRClient: SpeechRecognizer {
     private var lastTranscript: RecognitionTranscript = .empty
     private var audioPacketCount = 0
     private var totalAudioBytes = 0
+    private var didRequestEnd = false
     private var sessionStartTime: ContinuousClock.Instant?
     private var lastTranscriptTime: ContinuousClock.Instant?
 
@@ -56,7 +57,7 @@ actor SonioxASRClient: SpeechRecognizer {
         _events = stream
 
         let url = try SonioxProtocol.buildWebSocketURL(override: options.cloudProxyURL)
-        let session = URLSession(configuration: options.urlSessionConfiguration)
+        let session = options.resolvedSession
         let task = session.webSocketTask(with: url)
         task.resume()
 
@@ -66,6 +67,7 @@ actor SonioxASRClient: SpeechRecognizer {
         lastTranscript = .empty
         audioPacketCount = 0
         totalAudioBytes = 0
+        didRequestEnd = false
         sessionStartTime = ContinuousClock.now
         lastTranscriptTime = nil
 
@@ -89,6 +91,7 @@ actor SonioxASRClient: SpeechRecognizer {
 
     func endAudio() async throws {
         guard let task = webSocketTask else { return }
+        didRequestEnd = true
         try await task.send(.string(""))
         NSLog("[Soniox] Sent end-of-stream (sent %d packets, %d bytes)", audioPacketCount, totalAudioBytes)
     }
@@ -98,7 +101,7 @@ actor SonioxASRClient: SpeechRecognizer {
         receiveTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
-        session?.invalidateAndCancel()
+        // Don't invalidate shared session — just release our reference
         session = nil
         eventContinuation?.finish()
         eventContinuation = nil
@@ -130,11 +133,14 @@ actor SonioxASRClient: SpeechRecognizer {
                 } catch {
                     if Task.isCancelled { break }
 
-                    if await self.audioPacketCount == 0 {
+                    if await self.didRequestEnd {
+                        NSLog("[Soniox] Treating socket close as normal end (sent %d packets)", await self.audioPacketCount)
+                    } else if await self.audioPacketCount == 0 {
                         NSLog("[Soniox] Receive error before audio: %@", String(describing: error))
                         await self.emitEvent(.error(error))
                     } else {
-                        NSLog("[Soniox] Treating socket close as normal end (sent %d packets)", await self.audioPacketCount)
+                        NSLog("[Soniox] Unexpected close during audio (sent %d packets): %@", await self.audioPacketCount, String(describing: error))
+                        await self.emitEvent(.error(error))
                     }
                     await self.emitEvent(.completed)
                     break

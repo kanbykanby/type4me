@@ -15,17 +15,7 @@ enum AudioKeepAliveManager {
 
     /// Restore keep-alive state from UserDefaults. Call once at app launch.
     static func syncState() {
-        syncSpeakerState()
         syncMicState()
-    }
-
-    static func syncSpeakerState() {
-        let enabled = UserDefaults.standard.bool(forKey: "tf_speakerKeepAlive")
-        if enabled {
-            SoundFeedback.enableSpeakerKeepAlive()
-        } else {
-            SoundFeedback.disableSpeakerKeepAlive()
-        }
     }
 
     static func syncMicState() {

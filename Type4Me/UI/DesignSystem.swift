@@ -81,6 +81,12 @@ enum TF {
     static let barHeight: CGFloat = 52
     static let barBottomOffset: CGFloat = 48
 
+    // MARK: Transcript Popup (hover preview above bar)
+
+    static let transcriptPopupMaxHeight: CGFloat = 400
+    static let transcriptPopupCorner: CGFloat = 14
+    static let transcriptPopupGap: CGFloat = 8
+
     // MARK: Animation
 
     static let springSnappy = Animation.spring(response: 0.35, dampingFraction: 0.8)

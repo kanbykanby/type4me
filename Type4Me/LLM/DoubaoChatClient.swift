@@ -11,12 +11,14 @@ actor DoubaoChatClient: LLMClient {
     }
 
     private var session: URLSession {
+        let config = URLSessionConfiguration.default
+        // Cap total request duration (including streaming) to 60s so a stalled
+        // server can't hang the for-await loop indefinitely.
+        config.timeoutIntervalForResource = 60
         if ProxyBypassMode.current.bypassLLM {
-            let config = URLSessionConfiguration.default
             config.connectionProxyDictionary = [:]
-            return URLSession(configuration: config)
         }
-        return URLSession.shared
+        return URLSession(configuration: config)
     }
 
     /// Pre-establish TCP+TLS connection so the first real request skips handshake.

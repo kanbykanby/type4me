@@ -206,13 +206,24 @@ struct QuickCorrectionSheet: View {
         let correct = correctText.trimmingCharacters(in: .whitespaces)
         let wrong = selectedText
         var current = SnippetStorage.load()
+        let didAdd: Bool
         if !current.contains(where: { $0.trigger.lowercased() == wrong.lowercased() }) {
             current.append((trigger: wrong, value: correct))
             SnippetStorage.save(current)
+            didAdd = true
+        } else {
+            didAdd = false
         }
         onComplete?()
         withAnimation(.spring(duration: 0.3)) { showSuccess = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { dismiss() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            dismiss()
+            if didAdd {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    NotificationCenter.default.post(name: .navigateToVocabulary, object: correct)
+                }
+            }
+        }
     }
 }
 

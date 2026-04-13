@@ -2,8 +2,19 @@ import Foundation
 
 enum ElevenLabsProtocolError: Error, LocalizedError {
     case invalidEndpoint
+    case serverError(type: String, message: String?)
 
-    var errorDescription: String? { "Failed to build ElevenLabs WebSocket URL" }
+    var errorDescription: String? {
+        switch self {
+        case .invalidEndpoint:
+            return "Failed to build ElevenLabs WebSocket URL"
+        case .serverError(let type, let message):
+            if let message, !message.isEmpty {
+                return "ElevenLabs error (\(type)): \(message)"
+            }
+            return "ElevenLabs error: \(type)"
+        }
+    }
 }
 
 struct ElevenLabsTermsError: Error, LocalizedError {
@@ -79,10 +90,12 @@ enum ElevenLabsProtocol {
     private struct InboundMessage: Decodable {
         let messageType: String
         let text: String?          // ElevenLabs uses "text" not "transcript"
+        let message: String?       // Error detail message
 
         enum CodingKeys: String, CodingKey {
             case messageType = "message_type"
             case text
+            case message
         }
     }
 
@@ -148,8 +161,10 @@ enum ElevenLabsProtocol {
             // Surface this as a real error — user must accept terms at elevenlabs.io/app/product-terms
             throw ElevenLabsTermsError()
 
-        case "session_time_limit_exceeded", "insufficient_audio_activity",
-             "chunk_size_exceeded", "error":
+        case "session_time_limit_exceeded", "error":
+            throw ElevenLabsProtocolError.serverError(type: message.messageType, message: message.message)
+
+        case "insufficient_audio_activity", "chunk_size_exceeded":
             return nil
 
         default:

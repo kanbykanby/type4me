@@ -58,6 +58,10 @@ actor SenseVoiceServerManager {
     private var qwen3Process: Process?
     private(set) var qwen3Port: Int?
     private var qwen3StdoutPipe: Pipe?
+    private var qwen3CrashRestarts = 0
+    private let maxCrashRestarts = 3
+    /// Set to true when we intentionally stop the process (prevents crash handler from firing).
+    private var intentionalStop = false
 
     var isRunning: Bool { qwen3Process?.isRunning ?? false }
 
@@ -119,6 +123,12 @@ actor SenseVoiceServerManager {
             throw ServerError.launchFailed(error)
         }
         self.qwen3Process = proc
+        self.intentionalStop = false
+
+        proc.terminationHandler = { [weak self] terminatedProc in
+            let status = terminatedProc.terminationStatus
+            Task { await self?.handleQwen3Termination(status: status) }
+        }
 
         let portResult = await readPortFromStdout(pipe: pipe, timeout: 120)
         guard let discoveredPort = portResult else {
@@ -163,8 +173,14 @@ actor SenseVoiceServerManager {
 
     /// Stop the Qwen3-ASR server independently (e.g. when user disables verification).
     func stopQwen3() {
+        intentionalStop = true
         if let proc = qwen3Process, proc.isRunning {
             proc.terminate()
+            // SIGKILL fallback if SIGTERM doesn't work within 1s
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) { [weak proc] in
+                guard let proc = proc, proc.isRunning else { return }
+                kill(proc.processIdentifier, SIGKILL)
+            }
         }
         qwen3Process = nil
         qwen3Port = nil
@@ -177,8 +193,13 @@ actor SenseVoiceServerManager {
 
     /// Stop the server.
     func stop() {
+        intentionalStop = true
         if let proc = qwen3Process, proc.isRunning {
             proc.terminate()
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) { [weak proc] in
+                guard let proc = proc, proc.isRunning else { return }
+                kill(proc.processIdentifier, SIGKILL)
+            }
         }
         qwen3Process = nil
         qwen3Port = nil
@@ -187,6 +208,38 @@ actor SenseVoiceServerManager {
 
         logger.info("Qwen3-ASR server stopped")
         savePidsToFile()
+    }
+
+    // MARK: - Crash Handling
+
+    private func handleQwen3Termination(status: Int32) {
+        guard !intentionalStop else { return }
+        // Abnormal exit: clear state and optionally restart
+        NSLog("[SenseVoiceServerManager] Qwen3 process crashed with exit status %d", status)
+        DebugFileLogger.log("Qwen3 process crashed (exit \(status))")
+        qwen3Process = nil
+        qwen3Port = nil
+        Self.currentQwen3Port = nil
+        qwen3StdoutPipe = nil
+        savePidsToFile()
+
+        if qwen3CrashRestarts < maxCrashRestarts {
+            qwen3CrashRestarts += 1
+            NSLog("[SenseVoiceServerManager] Auto-restarting Qwen3 (attempt %d/%d)", qwen3CrashRestarts, maxCrashRestarts)
+            DebugFileLogger.log("Qwen3 auto-restart attempt \(qwen3CrashRestarts)/\(maxCrashRestarts)")
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                do {
+                    try await launchQwen3Server()
+                } catch {
+                    NSLog("[SenseVoiceServerManager] Qwen3 restart failed: %@", error.localizedDescription)
+                    DebugFileLogger.log("Qwen3 restart failed: \(error)")
+                }
+            }
+        } else {
+            NSLog("[SenseVoiceServerManager] Qwen3 crash restart limit reached (%d)", maxCrashRestarts)
+            DebugFileLogger.log("Qwen3 crash restart limit reached")
+        }
     }
 
     // MARK: - PID File Management
@@ -209,17 +262,44 @@ actor SenseVoiceServerManager {
 
     /// Kill orphaned server processes from previous app runs using saved PID file.
     /// Only kills PIDs we previously spawned, never touches other users' processes.
+    /// Verifies the process is actually a Python/qwen3 process before killing to avoid
+    /// killing unrelated processes after PID reuse.
     private func killOrphanedServers() {
         guard let content = try? String(contentsOf: Self.pidFileURL, encoding: .utf8) else { return }
         for line in content.split(separator: "\n") {
             guard let pid = Int32(line.trimmingCharacters(in: .whitespaces)), pid > 0 else { continue }
             // Verify process is still alive before killing
-            if kill(pid, 0) == 0 {
-                kill(pid, SIGTERM)
-                DebugFileLogger.log("Killed orphaned server PID \(pid)")
+            guard kill(pid, 0) == 0 else { continue }
+            // Verify the process is actually a Python/qwen3 process (guard against PID reuse)
+            guard isQwen3Process(pid: pid) else {
+                DebugFileLogger.log("Skipped orphan PID \(pid): not a qwen3/python process")
+                continue
             }
+            kill(pid, SIGTERM)
+            DebugFileLogger.log("Killed orphaned server PID \(pid)")
         }
         Self.clearPidFile()
+    }
+
+    /// Check if a PID belongs to a Python or qwen3-asr-server process.
+    private func isQwen3Process(pid: Int32) -> Bool {
+        let check = Process()
+        check.executableURL = URL(fileURLWithPath: "/bin/ps")
+        check.arguments = ["-p", "\(pid)", "-o", "comm="]
+        let pipe = Pipe()
+        check.standardOutput = pipe
+        check.standardError = Pipe()
+        do {
+            try check.run()
+            check.waitUntilExit()
+        } catch {
+            return false
+        }
+        guard let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) else {
+            return false
+        }
+        let comm = output.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return comm.contains("python") || comm.contains("qwen3")
     }
 
     /// Check if the Qwen3 server is healthy.

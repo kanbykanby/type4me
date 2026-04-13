@@ -95,9 +95,10 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
 
     @ViewBuilder
     private func providerMenuItem(_ provider: ASRProvider) -> some View {
-        Button {
-            selectedASRProvider = provider
-        } label: {
+        Toggle(isOn: Binding(
+            get: { provider == selectedASRProvider },
+            set: { if $0 { selectedASRProvider = provider } }
+        )) {
             Text(provider.displayName)
         }
     }

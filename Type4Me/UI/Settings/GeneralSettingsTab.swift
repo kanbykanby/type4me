@@ -20,7 +20,7 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
     @AppStorage("tf_showDockIcon") private var showDockIcon = true
     @AppStorage("tf_bypassProxy") private var bypassProxy = "off"
     @AppStorage("tf_stripTrailingPunctuation") private var stripTrailingPunctuation = "off"
-    @AppStorage("tf_speakerKeepAlive") private var speakerKeepAlive = false
+    @AppStorage("tf_hoverTranscriptPreview") private var hoverTranscriptPreview = true
     @AppStorage("tf_micKeepAlive") private var micKeepAlive = false
     @AppStorage("tf_selectedMicrophoneUID") private var selectedMicrophoneUID = ""
     @AppStorage("tf_selectedSpeakerUID") private var selectedSpeakerUID = ""
@@ -43,35 +43,51 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
             )
 
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            // CARD 1: 录音行为
+            // CARD 1: 录音设置
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-            settingsGroupCard(L("语音识别行为", "Speech Recognition"), icon: "waveform") {
-                // Row 1: 提示音 / 录音动效
-                HStack(alignment: .top, spacing: 16) {
-                    startSoundRow
-                        .frame(maxWidth: .infinity)
-                    visualStyleRow
-                        .frame(maxWidth: .infinity)
-                }
-
-                SettingsDivider()
-
-                // Row 2: 降低音量 / 去句末标点
-                HStack(alignment: .top, spacing: 16) {
-                    volumeReductionRow
-                        .frame(maxWidth: .infinity)
-                    stripPunctuationRow
-                        .frame(maxWidth: .infinity)
-                }
-
-                SettingsDivider()
-
-                // Row 3: 麦克风 / 提示音输出
+            settingsGroupCard(L("录音设置", "Recording"), icon: "mic.fill") {
+                // Row 1: 麦克风 / 降低音量
                 HStack(alignment: .top, spacing: 16) {
                     microphoneSelectionRow
                         .frame(maxWidth: .infinity)
+                    volumeReductionRow
+                        .frame(maxWidth: .infinity)
+                }
+
+                SettingsDivider()
+
+                // Row 2: 录音动效 / 麦克风保活
+                HStack(alignment: .top, spacing: 16) {
+                    visualStyleRow
+                        .frame(maxWidth: .infinity)
+                    micKeepAliveRow
+                        .frame(maxWidth: .infinity)
+                }
+            }
+
+            Spacer().frame(height: 16)
+
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // CARD 2: 语音识别设置
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+            settingsGroupCard(L("语音识别设置", "Speech Recognition"), icon: "waveform") {
+                // Row 1: 提示音 / 提示音输出
+                HStack(alignment: .top, spacing: 16) {
+                    startSoundRow
+                        .frame(maxWidth: .infinity)
                     speakerSelectionRow
+                        .frame(maxWidth: .infinity)
+                }
+
+                SettingsDivider()
+
+                // Row 2: 去句末标点 / 悬停文字预览
+                HStack(alignment: .top, spacing: 16) {
+                    stripPunctuationRow
+                        .frame(maxWidth: .infinity)
+                    hoverPreviewRow
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -155,17 +171,7 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
             settingsGroupCard(L("高级设置", "Advanced"), icon: "wrench.and.screwdriver") {
-                // Row 1: 音箱保活 / 麦克风保活
-                HStack(alignment: .top, spacing: 16) {
-                    speakerKeepAliveRow
-                        .frame(maxWidth: .infinity)
-                    micKeepAliveRow
-                        .frame(maxWidth: .infinity)
-                }
-
-                SettingsDivider()
-
-                // Row 2: 绕过系统代理
+                // 绕过系统代理
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L("绕过系统代理", "Bypass System Proxy").uppercased())
                         .font(.system(size: 10, weight: .semibold))
@@ -197,15 +203,8 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
         .onChange(of: launchAtLogin) { _, newValue in
             setLoginItem(enabled: newValue)
         }
-        .onChange(of: speakerKeepAlive) { _, _ in
-            AudioKeepAliveManager.syncSpeakerState()
-        }
         .onChange(of: micKeepAlive) { _, _ in
             AudioKeepAliveManager.syncMicState()
-        }
-        .onChange(of: selectedSpeakerUID) { _, _ in
-            // Restart keep-alive on the new device if active
-            SoundFeedback.restartKeepAliveIfNeeded()
         }
     }
 
@@ -371,6 +370,34 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
         .padding(.vertical, 6)
     }
 
+    private var hoverPreviewRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Text(L("悬停文字预览", "Hover Text Preview").uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(TF.settingsTextTertiary)
+                Text("|")
+                    .font(.system(size: 10))
+                    .foregroundStyle(TF.settingsTextTertiary.opacity(0.5))
+                Text(L("鼠标悬停悬浮条时显示完整文本", "Show full text when hovering the bar"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(TF.settingsTextTertiary)
+            }
+            settingsDropdown(
+                selection: Binding(
+                    get: { hoverTranscriptPreview ? "on" : "off" },
+                    set: { hoverTranscriptPreview = $0 == "on" }
+                ),
+                options: [
+                    ("on", L("开启", "On")),
+                    ("off", L("关闭", "Off")),
+                ]
+            )
+        }
+        .padding(.vertical, 6)
+    }
+
     private var microphoneSelectionRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
@@ -397,8 +424,7 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
             }
             settingsDropdown(
                 selection: $selectedMicrophoneUID,
-                options: [("", L("系统默认", "System Default"))] + availableMicrophones.map { ($0.uid, $0.name) },
-                icon: "mic.fill"
+                options: [("", L("系统默认", "System Default"))] + availableMicrophones.map { ($0.uid, $0.name) }
             )
         }
         .padding(.vertical, 6)
@@ -438,8 +464,7 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
             }
             settingsDropdown(
                 selection: $selectedSpeakerUID,
-                options: [("", L("系统默认", "System Default"))] + availableSpeakers.map { ($0.uid, $0.name) },
-                icon: "speaker.wave.2.fill"
+                options: [("", L("系统默认", "System Default"))] + availableSpeakers.map { ($0.uid, $0.name) }
             )
         }
         .padding(.vertical, 6)
@@ -451,34 +476,6 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
            !availableSpeakers.contains(where: { $0.uid == selectedSpeakerUID }) {
             selectedSpeakerUID = ""
         }
-    }
-
-    private var speakerKeepAliveRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
-                Text(L("音箱保活", "Speaker Keep-Alive").uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .tracking(0.8)
-                    .foregroundStyle(TF.settingsTextTertiary)
-                Text("|")
-                    .font(.system(size: 10))
-                    .foregroundStyle(TF.settingsTextTertiary.opacity(0.5))
-                Text(L("防止蓝牙音箱休眠断开", "Prevent BT speaker sleep"))
-                    .font(.system(size: 10))
-                    .foregroundStyle(TF.settingsTextTertiary)
-            }
-            settingsDropdown(
-                selection: Binding(
-                    get: { speakerKeepAlive ? "on" : "off" },
-                    set: { speakerKeepAlive = $0 == "on" }
-                ),
-                options: [
-                    ("on", L("开启", "On")),
-                    ("off", L("关闭", "Off")),
-                ]
-            )
-        }
-        .padding(.vertical, 6)
     }
 
     private var micKeepAliveRow: some View {

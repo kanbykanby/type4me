@@ -24,7 +24,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .member:
             return [.general, .modes, .vocabulary, .history, .about]
         case .byoKey, .none:
-            return allCases.map { $0 }
+            return [.general, .models, .vocabulary, .modes, .history, .about]
         }
     }
     #endif
@@ -115,6 +115,9 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .navigateToHistory)) { _ in
             selectedTab = .history
         }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToVocabulary)) { _ in
+            selectedTab = .vocabulary
+        }
     }
 
     // MARK: - Sidebar
@@ -152,7 +155,7 @@ struct SettingsView: View {
             Spacer()
 
             #if HAS_CLOUD_SUBSCRIPTION
-            if DebugTab.isEnabled {
+            if DebugTab.isEnabled && edition == .member {
                 navItem(.debug)
                     .padding(.horizontal, 10)
             }
@@ -221,7 +224,7 @@ struct SettingsView: View {
             tabPage(.models)     { ModelSettingsTab() }
             #endif
             tabPage(.vocabulary) { VocabularyTab() }
-            tabPage(.modes)      { ModesSettingsTab() }
+            fixedPage(.modes)    { ModesSettingsTab() }
             fixedPage(.history)  { HistoryTab(isActive: selectedTab == .history) }
             tabPage(.about)      { AboutTab() }
             #if HAS_CLOUD_SUBSCRIPTION
@@ -230,7 +233,7 @@ struct SettingsView: View {
             }
             #endif
             #if HAS_CLOUD_SUBSCRIPTION
-            if DebugTab.isEnabled {
+            if DebugTab.isEnabled && edition == .member {
                 tabPage(.debug) { DebugTab() }
             }
             #endif

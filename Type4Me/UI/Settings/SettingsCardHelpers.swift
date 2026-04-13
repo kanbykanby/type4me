@@ -150,14 +150,11 @@ extension SettingsCardHelpers {
         let currentLabel = options.first(where: { $0.value == selection.wrappedValue })?.label ?? selection.wrappedValue
         return Menu {
             ForEach(options, id: \.value) { option in
-                Button {
-                    selection.wrappedValue = option.value
-                } label: {
-                    if option.value == selection.wrappedValue {
-                        Label(option.label, systemImage: "checkmark")
-                    } else {
-                        Text(option.label)
-                    }
+                Toggle(isOn: Binding(
+                    get: { option.value == selection.wrappedValue },
+                    set: { if $0 { selection.wrappedValue = option.value } }
+                )) {
+                    Text(option.label)
                 }
             }
         } label: {

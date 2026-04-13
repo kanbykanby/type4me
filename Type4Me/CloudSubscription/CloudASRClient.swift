@@ -47,11 +47,15 @@ actor CloudASRClient: SpeechRecognizer {
         }
 
         let region = CloudConfig.currentRegion
-        let endpoint = CloudConfig.apiEndpoint + "/asr"
+        // WebSocket requires ws:// scheme; convert from http:// API endpoint
+        let wsEndpoint = CloudConfig.apiEndpoint
+            .replacingOccurrences(of: "https://", with: "wss://")
+            .replacingOccurrences(of: "http://", with: "ws://")
+            + "/asr"
 
         // Pass JWT + device ID via query params (WebSocket upgrade doesn't support custom headers in URLSession)
         let deviceID = await CloudAPIClient.shared.deviceID
-        let authedEndpoint = endpoint + "?token=" + token + "&device_id=" + deviceID
+        let authedEndpoint = wsEndpoint + "?token=" + token + "&device_id=" + deviceID
 
         var proxyOptions = options
         proxyOptions.cloudProxyURL = authedEndpoint
