@@ -1,0 +1,11 @@
+/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/deps/claxon-af185a628de78a56.d: /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/lib.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/crc.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/error.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/frame.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/input.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/metadata.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/subframe.rs
+
+/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/deps/libclaxon-af185a628de78a56.rmeta: /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/lib.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/crc.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/error.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/frame.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/input.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/metadata.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/subframe.rs
+
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/lib.rs:
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/crc.rs:
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/error.rs:
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/frame.rs:
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/input.rs:
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/metadata.rs:
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/claxon-0.4.3/src/subframe.rs:

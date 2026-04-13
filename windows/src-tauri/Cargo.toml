@@ -1,0 +1,57 @@
+[package]
+name = "type4me-windows"
+version = "0.1.0"
+edition = "2021"
+description = "Type4Me - Voice Input for Windows"
+authors = ["Type4Me"]
+license = "MIT"
+rust-version = "1.77"
+
+[lib]
+name = "type4me_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-updater = "2"
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+flate2 = "1"
+bzip2 = "0.5"
+tar = "0.4"
+uuid = { version = "1", features = ["v4", "serde"] }
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rodio = "0.19"
+anyhow = "1"
+thiserror = "2"
+base64 = "0.22"
+dirs = "6"
+chrono = { version = "0.4", features = ["serde"] }
+futures-util = "0.3"
+http = "1"
+
+[target.'cfg(windows)'.dependencies]
+cpal = "0.15"
+windows = { version = "0.58", features = [
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Security_Cryptography",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+sherpa = []

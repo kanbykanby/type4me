@@ -1,0 +1,14 @@
+/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/deps/clang_sys-2413d0ccf16b3bb2.d: /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/lib.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/support.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/link.rs /Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/clang-sys-50b61a6e242a9d5f/out/macros.rs /Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/clang-sys-50b61a6e242a9d5f/out/common.rs /Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/clang-sys-50b61a6e242a9d5f/out/dynamic.rs
+
+/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/deps/libclang_sys-2413d0ccf16b3bb2.rlib: /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/lib.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/support.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/link.rs /Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/clang-sys-50b61a6e242a9d5f/out/macros.rs /Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/clang-sys-50b61a6e242a9d5f/out/common.rs /Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/clang-sys-50b61a6e242a9d5f/out/dynamic.rs
+
+/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/deps/libclang_sys-2413d0ccf16b3bb2.rmeta: /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/lib.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/support.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/link.rs /Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/clang-sys-50b61a6e242a9d5f/out/macros.rs /Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/clang-sys-50b61a6e242a9d5f/out/common.rs /Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/clang-sys-50b61a6e242a9d5f/out/dynamic.rs
+
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/lib.rs:
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/support.rs:
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/link.rs:
+/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/clang-sys-50b61a6e242a9d5f/out/macros.rs:
+/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/clang-sys-50b61a6e242a9d5f/out/common.rs:
+/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/clang-sys-50b61a6e242a9d5f/out/dynamic.rs:
+
+# env-dep:OUT_DIR=/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/clang-sys-50b61a6e242a9d5f/out

@@ -1,0 +1,14 @@
+/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/deps/serde-a6f464a37f75db86.d: /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/serde-9e6bbb4a76c82b7a/out/private.rs
+
+/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/deps/libserde-a6f464a37f75db86.rlib: /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/serde-9e6bbb4a76c82b7a/out/private.rs
+
+/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/deps/libserde-a6f464a37f75db86.rmeta: /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/serde-9e6bbb4a76c82b7a/out/private.rs
+
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/Users/jonathan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/serde-9e6bbb4a76c82b7a/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/jonathan/projects/type4me/windows/src-tauri/target/debug/build/serde-9e6bbb4a76c82b7a/out

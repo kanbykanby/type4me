@@ -1,0 +1,67 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicorevin/tauri2-schema/main/tauri.conf.json",
+  "productName": "Type4Me",
+  "version": "0.1.0",
+  "identifier": "com.type4me.windows",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "settings",
+        "title": "Type4Me Settings",
+        "url": "/",
+        "width": 720,
+        "height": 560,
+        "resizable": true,
+        "center": true,
+        "visible": false,
+        "decorations": true
+      },
+      {
+        "label": "floating-bar",
+        "title": "Type4Me",
+        "url": "/floating-bar",
+        "width": 400,
+        "height": 48,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": true,
+        "visible": false,
+        "skipTaskbar": true,
+        "center": true
+      }
+    ],
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": false
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": []
+    }
+  }
+}

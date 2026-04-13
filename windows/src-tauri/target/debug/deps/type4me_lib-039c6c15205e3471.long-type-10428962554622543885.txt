@@ -1,0 +1,2 @@
+std::iter::Chain<std::iter::Chain<SweepTone, TakeDuration<rodio::source::Zero<f32>>>, SweepTone>
+std::iter::Chain<std::iter::Chain<SweepTone, TakeDuration<rodio::source::Zero<f32>>>, SweepTone>: rodio::Source
