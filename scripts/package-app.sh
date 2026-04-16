@@ -186,6 +186,11 @@ WRAPPER
         chmod +x "$APP_PATH/Contents/MacOS/qwen3-asr-server"
         # Remove .dist-info dirs that confuse codesign's bundle detection
         find "$APP_PATH/Contents/Resources/qwen3-asr-server-dist" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+        # Keep mlx.metallib in the bundle.  Even in JIT mode (MLX_METAL_JIT=ON)
+        # the small (~2-5MB) metallib is required for MLX initialization.
+        # JIT mode ensures the metallib uses only core shaders compatible with
+        # macOS 14+; additional kernels are compiled from embedded source at
+        # runtime for the host's Metal version.
         find "$APP_PATH/Contents/Resources/qwen3-asr-server-dist" -type f \( -name "*.dylib" -o -name "*.so" -o -name "*.metallib" -o -perm +111 \) \
             -exec codesign --force --options runtime --timestamp --sign "${SIGNING_IDENTITY}" {} \; 2>/dev/null || true
         echo "qwen3-asr-server bundled and signed."

@@ -40,7 +40,7 @@ if [ "$QUICK" = "0" ]; then
     # This compiles Metal kernels at runtime, adapting to the host's Metal
     # version instead of shipping a pre-compiled metallib tied to one OS.
     CMAKE_ARGS="-DMLX_METAL_JIT=ON -DCMAKE_OSX_DEPLOYMENT_TARGET=$MIN_MACOS" \
-        pip install mlx --no-binary mlx
+        pip install mlx --no-binary mlx --force-reinstall --no-deps
 
     echo "=== [qwen3-asr-server] Installing remaining dependencies ==="
     pip install -r requirements.txt
@@ -61,6 +61,15 @@ if [ -d "$DIST" ]; then
     if [ -n "$METALLIB" ]; then
         SIZE=$(du -h "$METALLIB" | cut -f1)
         echo "[qwen3-asr-server] mlx.metallib size: $SIZE (JIT mode: expect ~2-5MB, not ~125MB)"
+        # PyInstaller puts libmlx.dylib in _internal/ but keeps mlx.metallib in
+        # _internal/mlx/lib/.  MLX resolves the metallib relative to its dylib via
+        # dladdr, so it looks in _internal/ and fails.  Copy metallib next to the
+        # top-level dylib so MLX can find it at runtime.
+        INTERNAL="$DIST/_internal"
+        if [ -f "$INTERNAL/libmlx.dylib" ] && [ ! -f "$INTERNAL/mlx.metallib" ]; then
+            cp "$METALLIB" "$INTERNAL/mlx.metallib"
+            echo "[qwen3-asr-server] Copied mlx.metallib next to libmlx.dylib for runtime discovery"
+        fi
     fi
     TOTAL=$(du -sh "$DIST" | cut -f1)
     echo "=== [qwen3-asr-server] Build complete ($TOTAL) ==="
