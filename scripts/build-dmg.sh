@@ -13,9 +13,23 @@ STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/type4me-dmg.XXXXXX")"
 
 # Variant validation
 case "$VARIANT" in
-    pure|official|local) ;;
+    pure|local) ;;
+    official)
+        # Subscription development is paused (2026-04). The marker is archived,
+        # so building official would silently produce a binary without
+        # HAS_CLOUD_SUBSCRIPTION. Fail loudly with re-enable instructions
+        # instead of letting that happen.
+        if [ ! -f "$PROJECT_DIR/Type4Me/CloudSubscription/marker" ]; then
+            echo "ERROR: official variant is archived (subscription paused)."
+            echo "       To re-enable, restore the marker file:"
+            echo "         mv Type4Me/CloudSubscription/marker.archived-no-subscription \\"
+            echo "            Type4Me/CloudSubscription/marker"
+            echo "         swift package clean"
+            exit 1
+        fi
+        ;;
     cloud) VARIANT="pure" ;; # backwards compat
-    *) echo "ERROR: Unknown VARIANT=$VARIANT (expected pure, official, or local)"; exit 1 ;;
+    *) echo "ERROR: Unknown VARIANT=$VARIANT (expected pure or local)"; exit 1 ;;
 esac
 
 # Default ARCH based on variant

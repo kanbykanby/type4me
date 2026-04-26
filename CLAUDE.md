@@ -28,8 +28,27 @@ Three product variants built from the same codebase via conditional compilation 
 | Variant | `HAS_SHERPA_ONNX` | `HAS_CLOUD_SUBSCRIPTION` | Arch | Description |
 |---------|---|---|---|---|
 | **pure** | no | no | universal | Open-source cloud edition (BYOK API keys) |
-| **official** | no | yes | universal | Official member edition (subscription + cloud proxy) |
+| **official** | no | yes | universal | Official member edition (subscription + cloud proxy) — **archived 2026-04, see below** |
 | **local** | yes | no | arm64 | Open-source local edition (bundled SenseVoice + Qwen3-ASR) |
+
+### Subscription paused (2026-04)
+
+We are not developing the subscription feature for the foreseeable future. The
+`Type4Me/CloudSubscription/marker` file has been renamed to
+`marker.archived-no-subscription`, so `swift build`, `deploy.sh`, and
+`build-dmg.sh VARIANT=pure|local` all default to the no-subscription path.
+`build-dmg.sh VARIANT=official` now fails fast with re-enable instructions.
+
+The `Type4Me/CloudSubscription/` source directory is preserved as-is for
+future reactivation. To re-enable:
+
+```bash
+mv Type4Me/CloudSubscription/marker.archived-no-subscription \
+   Type4Me/CloudSubscription/marker
+swift package clean
+```
+
+Public GitHub Releases ship only `pure` (universal) and `local` (arm64).
 
 ### How it works
 
@@ -44,11 +63,11 @@ Three product variants built from the same codebase via conditional compilation 
 # Open-source cloud edition (no subscription, no local ASR)
 VARIANT=pure bash scripts/build-dmg.sh
 
-# Official member edition (with subscription system)
-VARIANT=official bash scripts/build-dmg.sh
-
 # Open-source local edition (bundled models, Apple Silicon only)
 VARIANT=local bash scripts/build-dmg.sh
+
+# Official member edition — archived, see "Subscription paused" above.
+# VARIANT=official bash scripts/build-dmg.sh
 ```
 
 ### Subscription code location
