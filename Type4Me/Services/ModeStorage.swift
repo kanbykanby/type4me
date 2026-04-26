@@ -110,6 +110,19 @@ struct ModeStorage {
             }
         }
 
+        // One-time seed of agentMode for existing installs
+        // (custom defaults are not auto-injected like builtins, so we seed once then respect the user's edits)
+        let agentSeedKey = "tf_agentModeSeeded"
+        if !UserDefaults.standard.bool(forKey: agentSeedKey) {
+            if !result.contains(where: { $0.id == ProcessingMode.agentModeId }) {
+                result.append(ProcessingMode.agentMode)
+                // Persist immediately so the seeded mode survives even if the
+                // user quits before triggering any save path.
+                try? save(result)
+            }
+            UserDefaults.standard.set(true, forKey: agentSeedKey)
+        }
+
         return result
     }
 
