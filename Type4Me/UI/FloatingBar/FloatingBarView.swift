@@ -312,6 +312,13 @@ struct FloatingBarView<S: FloatingBarState>: View {
     // MARK: - Phase Transitions
 
     private func handlePhaseChange(_ phase: FloatingBarPhase) {
+        // Reset hover state on panel show/hide boundaries.
+        // NSTrackingArea suspends events when the view is hidden (panel orderOut)
+        // instead of firing mouseExited, so isHovered would otherwise leak across
+        // recording sessions and auto-show the popup without any actual hover.
+        if phase == .preparing || phase == .hidden {
+            isHovered = false
+        }
         switch phase {
         case .preparing:
             recordingPeakWidth = TF.barHeight
